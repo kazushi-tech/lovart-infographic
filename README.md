@@ -1,6 +1,6 @@
-# Infographic Generator — Reference App
+# Lovart Infographic Generator
 
-AI Studio で構築された参照実装。Gemini API を使い、対話形式で要件を収集し、ビジネス向けインフォグラフィックスライドを生成・編集する。
+Gemini API を使い、対話形式で要件を収集し、ビジネス向けインフォグラフィックスライドを生成・編集する standalone SPA。
 
 ## 技術スタック
 
@@ -44,7 +44,14 @@ cp .env.example .env
 npm run dev
 ```
 
-**注意**: 親プロジェクト（Nano Banana本体）と同時に開発する場合、親の PostCSS/Tailwind v3 が干渉するため `postcss.config.mjs` を `reference/` 直下に配置している。この設定は削除しないこと。
+## 環境変数
+
+| 変数名 | 必須 | 説明 |
+| ------ | ---- | ---- |
+| `GEMINI_API_KEY` | Yes | Gemini API 呼び出し用。構造生成に使用 |
+| `API_KEY` | Yes | 画像生成用（gemini-3.1-flash-image-preview）。有料プロジェクトキーが必要 |
+| `APP_URL` | No | ホスティング URL（Render 等でデプロイ時） |
+| `PORT` | No | サーバーポート（デフォルト: 3000） |
 
 ## ビルド
 
@@ -56,31 +63,29 @@ npm run lint        # TypeScript 型チェック（tsc --noEmit）
 ## ディレクトリ構造
 
 ```text
-reference/
 ├── src/
 │   ├── components/
-│   │   ├── AppShell.tsx           # メインレイアウト（状態管理の中心）
-│   │   ├── AppHeader.tsx          # ヘッダーバー
+│   │   ├── AppShell.tsx              # メインレイアウト（状態管理の中心）
+│   │   ├── AppHeader.tsx             # ヘッダーバー
 │   │   ├── ChatInterviewSidebar.tsx  # ヒアリング + チャットUI
 │   │   ├── CenterPreviewWorkspace.tsx # スライドキャンバス
-│   │   ├── RightInspectorPanel.tsx    # 要素編集パネル
-│   │   ├── SlideThumbnailRail.tsx     # スライド一覧
-│   │   ├── BriefSummaryCard.tsx       # 要件サマリー
-│   │   ├── ChatComposer.tsx           # テキスト入力
-│   │   ├── ChatMessageList.tsx        # メッセージ一覧
-│   │   ├── ChatMessageBubble.tsx      # 個別メッセージ
-│   │   ├── InterviewProgress.tsx      # ステップ進捗
-│   │   ├── TopCanvasToolbar.tsx       # ツールバー（UI のみ）
-│   │   └── DownloadActions.tsx        # ダウンロードボタン（UI のみ）
+│   │   ├── RightInspectorPanel.tsx   # 要素編集パネル
+│   │   ├── SlideThumbnailRail.tsx    # スライド一覧
+│   │   ├── BriefSummaryCard.tsx      # 要件サマリー
+│   │   ├── ChatComposer.tsx          # テキスト入力
+│   │   ├── ChatMessageList.tsx       # メッセージ一覧
+│   │   ├── ChatMessageBubble.tsx     # 個別メッセージ
+│   │   ├── InterviewProgress.tsx     # ステップ進捗
+│   │   ├── TopCanvasToolbar.tsx      # ツールバー（UI のみ）
+│   │   └── DownloadActions.tsx       # ダウンロードボタン（UI のみ）
 │   ├── services/
-│   │   └── geminiService.ts       # Gemini API 呼び出し
-│   ├── designTokens.ts            # テンプレート別デザイントークン
-│   ├── demoData.ts                # 型定義 + モック + デモステート
-│   ├── index.css                  # Tailwind v4 エントリ
-│   ├── main.tsx                   # React エントリポイント
-│   └── App.tsx                    # ルートコンポーネント
-├── server.ts                      # Express + Vite dev middleware
-├── postcss.config.mjs             # 親プロジェクトの Tailwind v3 遮断用
+│   │   └── geminiService.ts          # Gemini API 呼び出し
+│   ├── designTokens.ts              # テンプレート別デザイントークン
+│   ├── demoData.ts                  # 型定義 + モック + デモステート
+│   ├── index.css                    # Tailwind v4 エントリ
+│   ├── main.tsx                     # React エントリポイント
+│   └── App.tsx                      # ルートコンポーネント
+├── server.ts                        # Express + Vite dev middleware
 ├── vite.config.ts
 ├── tsconfig.json
 └── package.json
@@ -92,25 +97,4 @@ reference/
 2. **DownloadActions**: PDF/ZIP/HTML ダウンロードは UI のみで未実装
 3. **BriefSummaryCard**: 「編集」ボタンは機能なし
 4. **生成後の追加指示**: 「再生成機能は開発中です」メッセージで止まる
-5. **server.ts**: PORT が 3000 にハードコード
-
-## Nano Banana 本体への統合メモ
-
-### 移植候補コンポーネント
-
-- `ChatInterviewSidebar` + 関連コンポーネント: ヒアリングフロー
-- `CenterPreviewWorkspace` + `RenderElement`: キャンバスとドラッグ移動
-- `RightInspectorPanel`: 要素編集UI
-- `designTokens.ts`: テンプレート別配色定義
-
-### データ受け渡し
-
-- 本体の `SlideSpec` (pipeline-core-types.ts) と `reference/` の `SlideData` (demoData.ts) は `pageKind`, `eyebrow`, `headline`, `kpis` 等のフィールドが共通
-- `ElementData` (座標+スタイル) は本体の overlay レイヤーに相当
-- 変換アダプターが必要: `SlideSpec → SlideData` (表示用) と `SlideData → SlideSpec` (パイプライン保存用)
-
-### 本体側で追加調整が必要なポイント
-
-- `slide-specs.json` の fetch タイミング問題（Phase 1 で既知）
-- 編集結果の永続化（現状はメモリ内のみ）
-- API キーの扱い（本体は APP_PASSWORD 認証、reference は環境変数直接）
+5. **編集結果の永続化**: 現状はメモリ内のみ（リロードで消える）

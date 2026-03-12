@@ -1,12 +1,10 @@
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI, Type } from '@google/genai';
-import crypto from 'crypto';
 
 const app = express();
 app.use(express.json());
 
-const PORT = 3000;
+const PORT = parseInt(process.env.PORT || '3000', 10);
 
 // API routes can go here (e.g. for database operations)
 app.get("/api/health", (req, res) => {
