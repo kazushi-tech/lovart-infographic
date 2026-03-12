@@ -1,33 +1,40 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { SlideData, ElementData } from '../types/domain';
 import TopCanvasToolbar from './TopCanvasToolbar';
-import { ChevronLeft, ChevronRight, Maximize2 } from 'lucide-react';
+import { Maximize2 } from 'lucide-react';
 import { DesignToken, DEFAULT_TOKEN } from '../designTokens';
 
 interface CenterPreviewWorkspaceProps {
-  activeSlide: SlideData | null;
-  totalSlides: number;
+  slides: SlideData[];
+  activeSlideId: string | null;
   selectedElementId: string | null;
+  onSelectSlide: (id: string) => void;
   onSelectElement: (id: string | null) => void;
-  onUpdateElement: (id: string, updates: Partial<ElementData>) => void;
-  onNext: () => void;
-  onPrev: () => void;
+  onUpdateElement: (elementId: string, updates: Partial<ElementData>) => void;
   designToken?: DesignToken;
 }
 
 export default function CenterPreviewWorkspace({
-  activeSlide,
-  totalSlides,
+  slides,
+  activeSlideId,
   selectedElementId,
+  onSelectSlide,
   onSelectElement,
   onUpdateElement,
-  onNext,
-  onPrev,
   designToken = DEFAULT_TOKEN,
 }: CenterPreviewWorkspaceProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const slideRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
-  if (!activeSlide) {
+  // Scroll active slide into view when activeSlideId changes
+  useEffect(() => {
+    if (!activeSlideId) return;
+    const el = slideRefs.current.get(activeSlideId);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [activeSlideId]);
+
+  if (slides.length === 0) {
     return (
       <div className="flex-1 flex flex-col bg-slate-950 text-slate-500 relative">
         <TopCanvasToolbar />
@@ -46,78 +53,119 @@ export default function CenterPreviewWorkspace({
     <div className="flex-1 flex flex-col bg-slate-950 relative overflow-hidden">
       <TopCanvasToolbar />
 
-      {/* Header Info */}
-      <header className="absolute top-14 left-0 right-0 h-12 flex items-center justify-between px-6 z-10 pointer-events-none">
-        <div className="flex items-center gap-3">
-          <h1 className="text-sm font-semibold text-slate-200 truncate max-w-md drop-shadow-md">
-            {activeSlide.title}
-          </h1>
-          <span className="px-2 py-0.5 rounded bg-slate-900/80 border border-slate-700/50 text-[10px] font-medium text-slate-400 backdrop-blur-sm">
-            {activeSlide.pageNumber} / {totalSlides}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-1.5 pointer-events-auto">
-          <button
-            onClick={onPrev}
-            disabled={activeSlide.pageNumber === 1}
-            className="p-1.5 rounded bg-slate-900/80 border border-slate-700/50 text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-30 disabled:hover:bg-slate-900/80 transition-colors backdrop-blur-sm shadow-sm"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          <button
-            onClick={onNext}
-            disabled={activeSlide.pageNumber === totalSlides}
-            className="p-1.5 rounded bg-slate-900/80 border border-slate-700/50 text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-30 disabled:hover:bg-slate-900/80 transition-colors backdrop-blur-sm shadow-sm"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-      </header>
-
-      {/* Main Canvas Area */}
-      <main 
-        className="flex-1 relative flex items-center justify-center p-8 overflow-auto bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px]"
-        onClick={() => onSelectElement(null)} // Click outside to deselect
+      {/* Scrollable slide list */}
+      <main
+        className="flex-1 overflow-y-auto p-6 space-y-6 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px]"
+        onClick={() => onSelectElement(null)}
       >
-        {/* Aspect Ratio Container (16:9) */}
-        <div 
-          ref={containerRef}
-          className="relative w-full max-w-5xl aspect-video bg-slate-900 shadow-2xl ring-1 ring-slate-800 overflow-hidden"
-          onClick={(e) => e.stopPropagation()} // Prevent deselection when clicking canvas background
-        >
-          {/* Background Image */}
-          {activeSlide.imageUrl && (
-            <img
-              src={activeSlide.imageUrl}
-              alt={activeSlide.title}
-              className="absolute inset-0 w-full h-full object-cover opacity-90 mix-blend-luminosity pointer-events-none"
-              referrerPolicy="no-referrer"
+        {slides.map((slide) => {
+          const isActive = slide.id === activeSlideId;
+          return (
+            <SlideCard
+              key={slide.id}
+              slide={slide}
+              isActive={isActive}
+              selectedElementId={isActive ? selectedElementId : null}
+              onClickSlide={() => onSelectSlide(slide.id)}
+              onSelectElement={(elementId) => {
+                onSelectSlide(slide.id);
+                onSelectElement(elementId);
+              }}
+              onUpdateElement={onUpdateElement}
+              designToken={designToken}
+              ref={(el) => {
+                if (el) slideRefs.current.set(slide.id, el);
+                else slideRefs.current.delete(slide.id);
+              }}
             />
-          )}
-
-          {/* Overlay for readability — driven by design token */}
-          <div className={`absolute inset-0 pointer-events-none ${designToken.overlayClass}`} />
-
-          {/* Elements Overlay */}
-          <div className="absolute inset-0">
-            {activeSlide.elements.map((el) => (
-              <RenderElement
-                key={el.id}
-                element={el}
-                isSelected={selectedElementId === el.id}
-                onSelect={() => onSelectElement(el.id)}
-                onUpdate={(updates) => onUpdateElement(el.id, updates)}
-                containerRef={containerRef}
-                textShadow={designToken.textShadow}
-              />
-            ))}
-          </div>
-        </div>
+          );
+        })}
       </main>
     </div>
   );
 }
+
+// Individual slide card with 16:9 ratio
+const SlideCard = React.forwardRef<
+  HTMLDivElement,
+  {
+    slide: SlideData;
+    isActive: boolean;
+    selectedElementId: string | null;
+    onClickSlide: () => void;
+    onSelectElement: (id: string | null) => void;
+    onUpdateElement: (id: string, updates: Partial<ElementData>) => void;
+    designToken: DesignToken;
+  }
+>(({ slide, isActive, selectedElementId, onClickSlide, onSelectElement, onUpdateElement, designToken }, ref) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  return (
+    <div
+      ref={ref}
+      className="w-full max-w-5xl mx-auto"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClickSlide();
+        onSelectElement(null);
+      }}
+    >
+      {/* Slide label */}
+      <div className="flex items-center gap-2 mb-2">
+        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+          isActive ? 'bg-blue-500 text-white' : 'bg-slate-800 text-slate-400'
+        }`}>
+          {slide.pageNumber}
+        </span>
+        <span className={`text-xs font-medium truncate ${
+          isActive ? 'text-slate-200' : 'text-slate-500'
+        }`}>
+          {slide.title}
+        </span>
+      </div>
+
+      {/* 16:9 slide container */}
+      <div
+        ref={containerRef}
+        className={`relative w-full aspect-video bg-slate-900 overflow-hidden rounded-lg transition-all ${
+          isActive
+            ? 'ring-2 ring-blue-500 shadow-lg shadow-blue-500/10'
+            : 'ring-1 ring-slate-800 hover:ring-slate-700'
+        }`}
+      >
+        {/* Background Image */}
+        {slide.imageUrl && (
+          <img
+            src={slide.imageUrl}
+            alt={slide.title}
+            className="absolute inset-0 w-full h-full object-cover opacity-90 mix-blend-luminosity pointer-events-none"
+            referrerPolicy="no-referrer"
+          />
+        )}
+
+        {/* Overlay */}
+        <div className={`absolute inset-0 pointer-events-none ${designToken.overlayClass}`} />
+
+        {/* Elements */}
+        <div className="absolute inset-0">
+          {slide.elements.map((el) => (
+            <RenderElement
+              key={el.id}
+              element={el}
+              isSelected={selectedElementId === el.id}
+              onSelect={() => onSelectElement(el.id)}
+              onUpdate={(updates) => onUpdateElement(el.id, updates)}
+              containerRef={containerRef}
+              textShadow={designToken.textShadow}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+SlideCard.displayName = 'SlideCard';
 
 // Helper to render individual elements
 function RenderElement({
@@ -133,7 +181,7 @@ function RenderElement({
   isSelected: boolean;
   onSelect: () => void;
   onUpdate: (updates: Partial<ElementData>) => void;
-  containerRef: React.RefObject<HTMLDivElement>;
+  containerRef: React.RefObject<HTMLDivElement | null>;
   textShadow?: string;
 }) {
   const [isDragging, setIsDragging] = useState(false);
@@ -159,7 +207,6 @@ function RenderElement({
       let newX = initialPos.x + dx;
       let newY = initialPos.y + dy;
 
-      // Clamp to boundaries (approximate)
       newX = Math.max(0, Math.min(newX, 100));
       newY = Math.max(0, Math.min(newY, 100));
 
@@ -181,7 +228,6 @@ function RenderElement({
     };
   }, [isDragging, dragStart, initialPos, onUpdate, containerRef]);
 
-  // Base styles
   const style: React.CSSProperties = {
     position: 'absolute',
     left: `${element.x}%`,
@@ -202,14 +248,13 @@ function RenderElement({
     textShadow,
   };
 
-  // Selection & Hover styles
-  const interactionClasses = isSelected 
-    ? 'ring-2 ring-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/20 z-10' 
+  const interactionClasses = isSelected
+    ? 'ring-2 ring-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/20 z-10'
     : 'hover:ring-1 hover:ring-dashed hover:ring-slate-400 hover:bg-white/5 z-0';
 
   if (element.type === 'card') {
     return (
-      <div 
+      <div
         style={{ ...style, backgroundColor: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.1)' }}
         className={interactionClasses}
         onMouseDown={handleMouseDown}
@@ -221,7 +266,7 @@ function RenderElement({
 
   if (element.type === 'kpi') {
     return (
-      <div 
+      <div
         style={style}
         className={interactionClasses}
         onMouseDown={handleMouseDown}
@@ -237,7 +282,7 @@ function RenderElement({
   }
 
   return (
-    <div 
+    <div
       style={style}
       className={interactionClasses}
       onMouseDown={handleMouseDown}
