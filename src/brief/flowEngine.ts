@@ -101,6 +101,18 @@ export function getNextQuestion(state: FlowState): BriefQuestion | null {
 }
 
 /**
+ * 現在の質問を取得
+ *
+ * @param state 現在のフロー状態
+ * @returns 現在の質問、または完了時はnull
+ */
+export function getCurrentQuestion(state: FlowState): BriefQuestion | null {
+  // 完了済みリストのインデックス位置から現在の質問IDを取得
+  const currentQuestionId = state.completedQuestionIds[state.currentQuestionIndex];
+  return currentQuestionId ? findQuestionById(currentQuestionId) : null;
+}
+
+/**
  * 前の質問に戻れるか判定
  *
  * @param state 現在のフロー状態
