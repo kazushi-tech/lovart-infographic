@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChatMessage, StyleOption } from '../demoData';
+import { ChatMessage, StyleOption } from '../types/domain';
 import { Bot, User, Info } from 'lucide-react';
 
 interface ChatMessageBubbleProps {

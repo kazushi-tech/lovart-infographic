@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { SlideData, ElementData } from '../demoData';
+import { SlideData, ElementData } from '../types/domain';
 import TopCanvasToolbar from './TopCanvasToolbar';
 import { ChevronLeft, ChevronRight, Maximize2 } from 'lucide-react';
 import { DesignToken, DEFAULT_TOKEN } from '../designTokens';

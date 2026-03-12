@@ -1,87 +1,67 @@
-import React, { useState, useEffect } from 'react';
+/**
+ * AppShell Component
+ *
+ * メインアプリケーションシェル
+ * プロジェクト履歴管理、適応的インタビューフロー、スライド生成機能を統合
+ */
+
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import AppHeader from './AppHeader';
 import ChatInterviewSidebar from './ChatInterviewSidebar';
+import StartWorkspace from './StartWorkspace';
+import ProjectHistoryPanel from './ProjectHistoryPanel';
 import CenterPreviewWorkspace from './CenterPreviewWorkspace';
 import SlideThumbnailRail from './SlideThumbnailRail';
 import RightInspectorPanel from './RightInspectorPanel';
 import ApiKeySettingsModal from './ApiKeySettingsModal';
-import { InterviewData, SlideData, ElementData, ChatMessage } from '../demoData';
+import { SlideData, ElementData, ChatMessage } from '../types/domain';
+import { ProjectRecord, EntryMode } from '../types/project';
 import { Loader2 } from 'lucide-react';
 import { generateSlideStructure, generateBackgroundImage } from '../services/geminiService';
 import { getDesignToken } from '../designTokens';
-import { useApiKeys, ResolvedApiKeys } from '../hooks/useApiKeys';
+import { useApiKeys } from '../hooks/useApiKeys';
+import { useProjectHistory } from '../hooks/useProjectHistory';
+import {
+  initializeFlow,
+  answerQuestion,
+  getNextQuestion,
+  getCurrentQuestion,
+  canGoBack,
+  goBack,
+  getProgress,
+  getProgressPercent,
+  getActiveQuestions,
+  areRequiredQuestionsAnswered,
+} from '../brief/flowEngine';
+import { findQuestionById } from '../brief/questionBank';
+import { compileBrief } from '../brief/compileBrief';
 
-const QUESTIONS = [
-  {
-    id: 'styleId',
-    text: 'デザインのテンプレートを選んでください。',
-    optionsType: 'grid' as const,
-    options: [
-      { id: 'corporate', label: 'Corporate（コーポレート）', desc: '白背景、ネイビー×グレー、清潔感', imageUrl: 'https://picsum.photos/seed/corporate/300/200' },
-      { id: 'professional', label: 'Professional（プロフェッショナル）', desc: 'ライトグレー背景、ブルー系アクセント', imageUrl: 'https://picsum.photos/seed/professional/300/200' },
-      { id: 'executive', label: 'Executive（エグゼクティブ）', desc: 'ダークネイビー背景、ゴールドアクセント、重厚感', imageUrl: 'https://picsum.photos/seed/executive/300/200' },
-      { id: 'modern', label: 'Modern（モダン）', desc: 'グラデーション背景、ビビッドカラー', imageUrl: 'https://picsum.photos/seed/modern/300/200' },
-      { id: 'minimal', label: 'Minimal（ミニマル）', desc: '真っ白背景、黒テキスト、余白重視', imageUrl: 'https://picsum.photos/seed/minimal/300/200' },
-    ]
-  },
-  {
-    id: 'slideCount',
-    text: 'スライドの枚数を選んでください。',
-    optionsType: 'list' as const,
-    options: [
-      { id: '3', label: '3枚（簡潔版）' },
-      { id: '5', label: '5枚（標準）' },
-      { id: '8', label: '8枚（詳細版）' },
-      { id: '10', label: '10枚（フル版）' },
-    ]
-  },
-  {
-    id: 'targetAudience',
-    text: 'この資料のターゲット読者（誰に伝えたいか）を教えてください。',
-    optionsType: 'list' as const,
-    options: [
-      { id: 'executives', label: '経営層・役員' },
-      { id: 'managers', label: '部門長・マネージャー' },
-      { id: 'staff', label: '一般社員・スタッフ' },
-      { id: 'clients', label: '社外クライアント' },
-    ]
-  },
-  {
-    id: 'keyMessage',
-    text: 'ターゲットに一番伝えたい「キーメッセージ」は何ですか？',
-    optionsType: 'list' as const,
-    options: [
-      { id: 'cost', label: 'コスト削減と効率化' },
-      { id: 'growth', label: '売上拡大と事業成長' },
-      { id: 'innovation', label: '新規事業とイノベーション' },
-      { id: 'risk', label: 'リスク管理とコンプライアンス' },
-    ]
-  },
-  {
-    id: 'tone',
-    text: '資料全体のトーン＆マナー（雰囲気）を選んでください。',
-    optionsType: 'list' as const,
-    options: [
-      { id: 'professional', label: 'プロフェッショナル・論理的' },
-      { id: 'passionate', label: '情熱的・ビジョナリー' },
-      { id: 'friendly', label: '親しみやすい・カジュアル' },
-      { id: 'urgent', label: '危機感・緊急性' },
-    ]
-  },
-  {
-    id: 'supplementary',
-    text: '最後に、補足事項や強調したいポイントがあれば教えてください。',
-    optionsType: 'list' as const,
-    options: [
-      { id: 'data', label: '具体的な数値データを強調したい' },
-      { id: 'roadmap', label: '今後のロードマップを明確にしたい' },
-      { id: 'comparison', label: '他社との比較を分かりやすくしたい' },
-      { id: 'none', label: '特になし' },
-    ]
-  }
-];
+// Flow State のインターフェース定義（flowEngine からインポートしても良いが、念のため）
+interface FlowState {
+  answers: Record<string, unknown>;
+  currentQuestionIndex: number;
+  completedQuestionIds: string[];
+  isComplete: boolean;
+}
+
+// 質問オプションの型
+interface QuestionOption {
+  id: string;
+  label: string;
+  desc?: string;
+  imageUrl?: string;
+}
+
+// スタイルオプション（既存のインターフェース互換用）
+interface StyleOption {
+  id: string;
+  label: string;
+  desc?: string;
+  imageUrl?: string;
+}
 
 export default function AppShell() {
+  // API Keys
   const {
     storedKeys,
     setKeys,
@@ -92,31 +72,51 @@ export default function AppShell() {
     isRuntimeConfigLoading,
   } = useApiKeys();
 
+  // Project History
+  const {
+    projects,
+    activeProject,
+    isLoading: isProjectsLoading,
+    createProject,
+    openProject,
+    saveCurrentProject,
+    updateActiveProject,
+    deleteProject,
+    duplicateProject,
+    closeProject,
+    triggerAutosave,
+  } = useProjectHistory();
+
+  // UI State
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [showStartWorkspace, setShowStartWorkspace] = useState(false);
+
+  // Interview/Generation State
   const [isGenerated, setIsGenerated] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [generationProgress, setGenerationProgress] = useState<string>('');
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [interviewData, setInterviewData] = useState<Partial<InterviewData>>({});
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(-1); // -1: theme, 0-4: QUESTIONS
-  const [messages, setMessages] = useState<ChatMessage[]>([{
-    id: 'welcome-msg',
-    role: 'assistant',
-    text: 'インフォグラフィックの作成を開始します。まずテーマを入力するか、サンプルを使って開始してください。',
-    timestamp: Date.now(),
-    options: [
-      { id: 'opt1', label: 'サンプルで試す' },
-      { id: 'opt2', label: 'テーマを入力する' }
-    ]
-  }]);
+  const [generationProgress, setGenerationProgress] = useState('');
+
+  // Flow Engine State
+  const [flowState, setFlowState] = useState<FlowState>(initializeFlow());
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [entryMode, setEntryMode] = useState<EntryMode>('guided');
+
+  // Slide/Editor State
   const [slides, setSlides] = useState<SlideData[]>([]);
   const [activeSlideId, setActiveSlideId] = useState<string | null>(null);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
 
+  // Panel Resizing
   const [leftWidth, setLeftWidth] = useState(320);
   const [rightWidth, setRightWidth] = useState(288);
   const [isDraggingLeft, setIsDraggingLeft] = useState(false);
   const [isDraggingRight, setIsDraggingRight] = useState(false);
 
+  // Refs for autosave cleanup
+  const unlistenProjectOpenRef = useRef<(() => void) | null>(null);
+
+  // Panel resize handlers
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (isDraggingLeft) {
@@ -139,105 +139,259 @@ export default function AppShell() {
     };
   }, [isDraggingLeft, isDraggingRight]);
 
-  const handleSendMessage = (text: string, optionId?: string) => {
-    if (text === 'サンプルで試す') {
-      handleFillSampleBrief();
-      return;
-    }
-
-    const newMsg: ChatMessage = {
-      id: `msg-${Date.now()}`,
-      role: 'user',
-      text,
-      timestamp: Date.now()
+  // Listen for project open events from StartWorkspace
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const customEvent = e as CustomEvent<string>;
+      openProject(customEvent.detail).then(() => {
+        setShowStartWorkspace(false);
+      }).catch(console.error);
     };
-    
-    let newInterviewData = { ...interviewData };
-    let nextQuestionIndex = currentQuestionIndex;
 
-    if (currentQuestionIndex === -1) {
-      newInterviewData.theme = text;
-      nextQuestionIndex = 0;
-    } else if (currentQuestionIndex >= 0 && currentQuestionIndex < QUESTIONS.length) {
-      const q = QUESTIONS[currentQuestionIndex];
-      // Store the selected option id, or the text if free input
-      (newInterviewData as any)[q.id] = optionId || text;
-      nextQuestionIndex++;
-    }
+    window.addEventListener('open-project', handler);
+    unlistenProjectOpenRef.current = () => {
+      window.removeEventListener('open-project', handler);
+    };
 
-    setInterviewData(newInterviewData);
-    setCurrentQuestionIndex(nextQuestionIndex);
+    return () => {
+      window.removeEventListener('open-project', handler);
+    };
+  }, [openProject]);
 
-    const nextMessages = [...messages, newMsg];
-
-    if (isGenerated) {
-      // If already generated, we just append the user message and a placeholder AI response
-      nextMessages.push({
-        id: `msg-${Date.now() + 1}`,
-        role: 'assistant',
-        text: '追加の指示を受け付けました。現在、スライドの再生成機能は開発中です。右パネルから手動で編集してください。',
-        timestamp: Date.now() + 1
-      });
-    } else if (nextQuestionIndex < QUESTIONS.length) {
-      const nextQ = QUESTIONS[nextQuestionIndex];
-      nextMessages.push({
-        id: `msg-${Date.now() + 1}`,
-        role: 'assistant',
-        text: nextQ.text,
-        inputMode: 'options',
-        optionsType: nextQ.optionsType,
-        options: nextQ.options,
-        timestamp: Date.now() + 1
-      });
-    } else if (currentQuestionIndex < QUESTIONS.length) {
-      // Only show the completion message once, when transitioning to the end
-      nextMessages.push({
-        id: `msg-${Date.now() + 1}`,
-        role: 'assistant',
-        text: 'ありがとうございます！以下の内容で要件がまとまりました。確認して「スライドを生成する」ボタンを押してください。',
-        inputMode: 'none',
-        timestamp: Date.now() + 1
-      });
-    }
-
-    setMessages(nextMessages);
-  };
-
-  const handleFillSampleBrief = () => {
-    setInterviewData({
-      theme: 'AIが拓く事業成長と競争優位の未来',
-      targetAudience: '経営層・事業責任者',
-      keyMessage: 'AI導入はコスト削減ではなく、新たな価値創造と競争優位性確立のための必須投資である',
-      styleId: 'professional',
-      slideCount: '5',
-      tone: 'プロフェッショナル・論理的',
-      supplementary: '具体的な数値データやロードマップを含める'
-    });
-    setCurrentQuestionIndex(QUESTIONS.length);
-    setMessages(prev => [
-      ...prev,
+  // Initialize welcome message when opening start workspace or resetting
+  const initializeWelcomeMessage = useCallback(() => {
+    setMessages([
       {
-        id: `msg-${Date.now()}`,
-        role: 'user',
-        text: 'サンプルで試す',
-        timestamp: Date.now()
+        id: 'welcome-msg',
+        role: 'assistant',
+        text: 'インフォグラフィックの作成を開始します。対話形式で要件を教えてください。',
+        timestamp: Date.now(),
       },
-      {
-        id: `msg-${Date.now() + 1}`,
-        role: 'assistant',
-        text: 'サンプルの要件を入力しました。内容を確認し、よろしければ「スライドを生成する」ボタンを押してください。',
-        timestamp: Date.now() + 1
-      }
     ]);
+  }, []);
+
+  // Reset interview state
+  const resetInterview = useCallback(() => {
+    setFlowState(initializeFlow());
+    setMessages([]);
+    setIsGenerated(false);
+    setSlides([]);
+    setActiveSlideId(null);
+    setSelectedElementId(null);
+  }, []);
+
+  // Start a new project
+  const startNewProject = useCallback(async (mode: EntryMode) => {
+    try {
+      resetInterview();
+      setEntryMode(mode);
+
+      const project = await createProject({
+        title: '新しいプロジェクト',
+        entryMode: mode,
+        outputTarget: 'lovart-slides',
+      });
+
+      initializeWelcomeMessage();
+      setShowStartWorkspace(false);
+    } catch (e) {
+      console.error('Failed to create project:', e);
+    }
+  }, [createProject, resetInterview, initializeWelcomeMessage]);
+
+  // Handle answering a question
+  const handleSendMessage = useCallback(
+    (text: string, optionId?: string) => {
+      if (isGenerated) {
+        // If already generated, just add a placeholder response
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `msg-${Date.now()}`,
+            role: 'user',
+            text,
+            timestamp: Date.now(),
+          },
+          {
+            id: `msg-${Date.now() + 1}`,
+            role: 'assistant',
+            text: '追加の指示を受け付けました。現在、スライドの再生成機能は開発中です。右パネルから手動で編集してください。',
+            timestamp: Date.now() + 1,
+          },
+        ]);
+        return;
+      }
+
+      // Find the current question
+      const currentQuestion = getCurrentQuestion(flowState);
+      if (!currentQuestion) {
+        // No current question, this might be the first answer (theme)
+        const themeQuestion = findQuestionById('theme');
+        if (themeQuestion) {
+          const newFlowState = answerQuestion(flowState, 'theme', text);
+          setFlowState(newFlowState);
+
+          // Add user message
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `msg-${Date.now()}`,
+              role: 'user',
+              text,
+              timestamp: Date.now(),
+            },
+          ]);
+
+          // Add next question or complete
+          const nextQuestion = getNextQuestion(newFlowState);
+          if (nextQuestion) {
+            setMessages((prev) => [
+              ...prev,
+              createQuestionMessage(nextQuestion),
+            ]);
+          } else {
+            // All questions answered
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `msg-${Date.now() + 1}`,
+                role: 'assistant',
+                text: 'ありがとうございます！要件がまとまりました。確認して「生成する」ボタンを押してください。',
+                inputMode: 'none',
+                timestamp: Date.now() + 1,
+              },
+            ]);
+          }
+
+          // Autosave
+          updateActiveProject({
+            interviewData: {
+              theme: text,
+              ...(newFlowState.answers as any),
+            },
+          });
+          triggerAutosave('interviewData');
+        }
+        return;
+      }
+
+      // Answer the current question
+      const answerValue = optionId || text;
+      const newFlowState = answerQuestion(flowState, currentQuestion.id, answerValue);
+      setFlowState(newFlowState);
+
+      // Add user message
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `msg-${Date.now()}`,
+          role: 'user',
+          text: currentQuestion.summarize(answerValue),
+          timestamp: Date.now(),
+        },
+      ]);
+
+      // Get next question or show completion
+      const nextQuestion = getNextQuestion(newFlowState);
+      if (nextQuestion) {
+        setMessages((prev) => [
+          ...prev,
+          createQuestionMessage(nextQuestion),
+        ]);
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `msg-${Date.now() + 1}`,
+            role: 'assistant',
+            text: 'ありがとうございます！要件がまとまりました。確認して「生成する」ボタンを押してください。',
+            inputMode: 'none',
+            timestamp: Date.now() + 1,
+          },
+        ]);
+      }
+
+      // Autosave
+      updateActiveProject({
+        interviewData: {
+          ...newFlowState.answers as any,
+        },
+      });
+      triggerAutosave('interviewData');
+    },
+    [flowState, isGenerated, updateActiveProject, triggerAutosave]
+  );
+
+  // Create a message from a question
+  const createQuestionMessage = (question: any): ChatMessage => {
+    const options = question.options?.map((opt: any) => ({
+      id: opt.id,
+      label: opt.label,
+      desc: opt.description,
+    })) || [];
+
+    return {
+      id: `msg-${Date.now()}`,
+      role: 'assistant',
+      text: question.prompt,
+      inputMode: options.length > 0 ? 'options' : 'text',
+      optionsType: question.inputMode === 'single-choice' ? 'list' : 'grid',
+      options,
+      timestamp: Date.now(),
+    };
   };
 
-  const handleGenerate = async () => {
-    // Wait for runtime config to finish loading before making decisions
-    if (isRuntimeConfigLoading) {
-      return;
+  // Handle style selection
+  const handleSelectStyle = useCallback((option: StyleOption) => {
+    handleSendMessage(option.label, option.id);
+  }, [handleSendMessage]);
+
+  // Handle go back to previous question
+  const handleStepClick = useCallback((step: number) => {
+    if (isGenerated) return;
+
+    // Clear messages and reset to the target question
+    const targetIndex = step - 1;
+    const newFlowState = goBack(flowState);
+
+    // Re-build messages up to the target question
+    const newMessages: ChatMessage[] = [{
+      id: 'welcome-msg',
+      role: 'assistant',
+      text: 'インフォグラフィックの作成を開始します。対話形式で要件を教えてください。',
+      timestamp: Date.now(),
+    }];
+
+    // Add all completed answers
+    for (let i = 0; i < targetIndex; i++) {
+      const questionId = newFlowState.completedQuestionIds[i];
+      const question = findQuestionById(questionId);
+      if (question) {
+        newMessages.push({
+          id: `msg-${Date.now() + i * 2}`,
+          role: 'user',
+          text: question.summarize(newFlowState.answers[questionId]),
+          timestamp: Date.now() + i * 2,
+        });
+      }
     }
 
-    // Check for resolvable API key before generation
+    // Add the next question if available
+    const nextQuestion = getNextQuestion(newFlowState);
+    if (nextQuestion) {
+      newMessages.push(createQuestionMessage(nextQuestion));
+    }
+
+    setMessages(newMessages);
+    setFlowState({
+      ...newFlowState,
+      currentQuestionIndex: targetIndex,
+    });
+  }, [flowState, isGenerated]);
+
+  // Handle generate slides
+  const handleGenerate = useCallback(async () => {
+    if (isRuntimeConfigLoading) return;
     if (!hasResolvableKey) {
       setIsSettingsOpen(true);
       return;
@@ -247,22 +401,54 @@ export default function AppShell() {
     setGenerationProgress('スライド構成を生成中...');
 
     try {
+      // Compile the brief
+      const compiledBrief = compileBrief(flowState.answers);
+
       // 1. Generate structure
-      const newSlides = await generateSlideStructure(interviewData, resolvedGeminiKey);
+      const interviewData = flowState.answers as any;
+      const newSlides = await generateSlideStructure(
+        {
+          theme: String(interviewData.theme || ''),
+          styleId: String(interviewData.slideStyle || 'professional'),
+          slideCount: String(interviewData.slideCount || '5'),
+          targetAudience: String(interviewData.targetAudience || ''),
+          keyMessage: '',
+          tone: String(interviewData.tone || 'professional'),
+          supplementary: '',
+        },
+        resolvedGeminiKey
+      );
+
       setSlides(newSlides);
       setActiveSlideId(newSlides[0].id);
       setIsGenerated(true);
 
-      // 2. Generate images sequentially to avoid rate limits
+      // 2. Generate images sequentially
       for (let i = 0; i < newSlides.length; i++) {
         setGenerationProgress(`背景画像を生成中... (${i + 1}/${newSlides.length})`);
         const bgPrompt = newSlides[i].bgPrompt || 'abstract professional business background';
         const bgUrl = await generateBackgroundImage(bgPrompt, resolvedImageKey);
 
-        setSlides(prev => prev.map((s, index) =>
-          index === i ? { ...s, imageUrl: bgUrl } : s
-        ));
+        setSlides((prev) =>
+          prev.map((s, index) =>
+            index === i ? { ...s, imageUrl: bgUrl } : s
+          )
+        );
       }
+
+      // Update project status
+      updateActiveProject({
+        status: 'generated',
+        slides: newSlides.map((s, idx) => ({
+          id: s.id,
+          pageNumber: idx + 1,
+          title: s.title,
+          imageUrl: s.imageUrl,
+          bgPrompt: s.bgPrompt,
+        })),
+        generatedAt: new Date().toISOString(),
+      });
+      await saveCurrentProject();
 
       setGenerationProgress('');
     } catch (error: any) {
@@ -271,207 +457,243 @@ export default function AppShell() {
     } finally {
       setIsGenerating(false);
     }
-  };
+  }, [
+    flowState,
+    isRuntimeConfigLoading,
+    hasResolvableKey,
+    resolvedGeminiKey,
+    resolvedImageKey,
+    updateActiveProject,
+    saveCurrentProject,
+  ]);
 
+  // Handle new project
+  const handleNew = useCallback(() => {
+    closeProject();
+    resetInterview();
+    initializeWelcomeMessage();
+    setShowStartWorkspace(true);
+  }, [closeProject, resetInterview, initializeWelcomeMessage]);
+
+  // Handle open history
+  const handleOpenHistory = useCallback(() => {
+    setIsHistoryOpen(true);
+  }, []);
+
+  // Handle open project from history
+  const handleOpenProject = useCallback(async (id: string) => {
+    try {
+      await openProject(id);
+      setIsHistoryOpen(false);
+
+      // Load interview state from project
+      // For now, we'll reset to welcome message
+      resetInterview();
+      initializeWelcomeMessage();
+    } catch (e) {
+      console.error('Failed to open project:', e);
+    }
+  }, [openProject, resetInterview, initializeWelcomeMessage]);
+
+  // Handle save API keys
+  const handleSaveApiKeys = useCallback((geminiApiKey: string, imageApiKey: string) => {
+    setKeys({ geminiApiKey, imageApiKey });
+  }, [setKeys]);
+
+  // Computed values
   const activeSlideIndex = slides.findIndex((s) => s.id === activeSlideId);
   const activeSlide = activeSlideIndex !== -1 ? slides[activeSlideIndex] : null;
-  const selectedElement = activeSlide?.elements.find(e => e.id === selectedElementId) || null;
-  const designToken = getDesignToken(interviewData.styleId);
+  const selectedElement = activeSlide?.elements.find((e) => e.id === selectedElementId) || null;
+  const designToken = getDesignToken((flowState.answers as any).slideStyle || 'professional');
 
-  const handleNextSlide = () => {
-    if (activeSlideIndex < slides.length - 1) {
-      setActiveSlideId(slides[activeSlideIndex + 1].id);
-      setSelectedElementId(null);
-    }
-  };
+  const progress = getProgress(flowState);
+  const isComplete = flowState.isComplete;
+  const nextQuestion = getNextQuestion(flowState);
 
-  const handlePrevSlide = () => {
-    if (activeSlideIndex > 0) {
-      setActiveSlideId(slides[activeSlideIndex - 1].id);
-      setSelectedElementId(null);
-    }
-  };
-
-  const handleUpdateElement = (id: string, updates: Partial<ElementData>) => {
-    setSlides(prev => prev.map(slide => {
-      if (slide.id !== activeSlideId) return slide;
-      return {
-        ...slide,
-        elements: slide.elements.map(el => el.id === id ? { ...el, ...updates } : el)
-      };
-    }));
-  };
-
-  const handleStepClick = (step: number) => {
-    if (isGenerated) return;
-    
-    const newIndex = step - 1;
-    setCurrentQuestionIndex(newIndex);
-
-    // Clear data for this step and subsequent steps
-    const newInterviewData = { ...interviewData };
-    if (step <= 0) delete newInterviewData.theme;
-    if (step <= 1) delete newInterviewData.styleId;
-    if (step <= 2) delete newInterviewData.slideCount;
-    if (step <= 3) delete newInterviewData.targetAudience;
-    if (step <= 4) delete newInterviewData.keyMessage;
-    if (step <= 5) delete newInterviewData.tone;
-    if (step <= 6) delete newInterviewData.supplementary;
-    
-    setInterviewData(newInterviewData);
-
-    // Re-add the question message for the new step
-    const nextMessages = [...messages];
-    // We want to keep messages up to the point where they answered the previous step.
-    // Actually, it's easier to just append a new message asking the question again,
-    // or we can filter out messages that are newer than the step we are going back to.
-    // For simplicity, let's just append the question again.
-    
-    if (newIndex === -1) {
-      nextMessages.push({
-        id: `msg-${Date.now()}`,
-        role: 'assistant',
-        text: 'テーマを再度入力してください。',
-        timestamp: Date.now()
-      });
-    } else if (newIndex >= 0 && newIndex < QUESTIONS.length) {
-      const nextQ = QUESTIONS[newIndex];
-      nextMessages.push({
-        id: `msg-${Date.now()}`,
-        role: 'assistant',
-        text: nextQ.text,
-        inputMode: 'options',
-        optionsType: nextQ.optionsType,
-        options: nextQ.options,
-        timestamp: Date.now()
-      });
-    }
-
-    setMessages(nextMessages);
-  };
-
-  const handleSaveApiKeys = (geminiApiKey: string, imageApiKey: string) => {
-    setKeys({ geminiApiKey, imageApiKey });
-  };
-
-  const handleNew = () => {
-    setIsGenerated(false);
-    setInterviewData({});
-    setCurrentQuestionIndex(-1);
-    setSlides([]);
-    setActiveSlideId(null);
-    setSelectedElementId(null);
-    setMessages([{
-      id: 'welcome-msg',
-      role: 'assistant',
-      text: 'インフォグラフィックの作成を開始します。まずテーマを入力するか、サンプルを使って開始してください。',
-      timestamp: Date.now(),
-      options: [
-        { id: 'opt1', label: 'サンプルで試す' },
-        { id: 'opt2', label: 'テーマを入力する' }
-      ]
-    }]);
-  };
+  // Show start workspace if no active project or explicitly requested
+  const shouldShowStartWorkspace = (!activeProject && !isProjectsLoading) || showStartWorkspace;
 
   return (
     <div className="h-screen w-full flex flex-col bg-slate-950 text-slate-200 overflow-hidden font-sans selection:bg-blue-500/30 relative">
-
       {/* App Header */}
-      <AppHeader onNew={handleNew} onOpenSettings={() => setIsSettingsOpen(true)} isGenerated={isGenerated} />
+      <AppHeader
+        onNew={handleNew}
+        onOpenHistory={handleOpenHistory}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        isGenerated={isGenerated}
+      />
 
       <div className="flex-1 flex min-h-0 relative">
-        {!isGenerated ? (
-          <div className="flex-1 flex flex-col items-center justify-center bg-slate-950 p-6">
-            <div className="w-full max-w-4xl h-[85vh] flex flex-col bg-slate-900 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden">
-              <ChatInterviewSidebar
-                messages={messages}
-                interviewData={interviewData}
-                isGenerated={isGenerated}
-                onSendMessage={handleSendMessage}
-                onSelectStyle={(opt) => handleSendMessage(opt.label, opt.id)}
-                onGenerate={handleGenerate}
-                onStepClick={handleStepClick}
-                className="w-full h-full"
-                isGenerateDisabled={isRuntimeConfigLoading}
-                isGenerateLoading={isGenerating}
-              />
-            </div>
-            {/* Loading Overlay */}
-            {isGenerating && (
-              <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm">
-                <Loader2 className="w-12 h-12 text-blue-500 animate-spin mb-4" />
-                <p className="text-lg font-medium text-slate-200">{generationProgress}</p>
-                <p className="text-sm text-slate-400 mt-2">これには数十秒かかる場合があります...</p>
-              </div>
-            )}
-          </div>
+        {shouldShowStartWorkspace ? (
+          <StartWorkspace
+            onCreateProject={startNewProject}
+            recentProjects={projects}
+            isLoading={isProjectsLoading}
+          />
         ) : (
           <>
-            {/* Left Column: Chat Workflow & Context */}
-            <ChatInterviewSidebar
-              messages={messages}
-              interviewData={interviewData}
-              isGenerated={isGenerated}
-              onSendMessage={handleSendMessage}
-              onSelectStyle={(opt) => handleSendMessage(opt.label, opt.id)}
-              onGenerate={handleGenerate}
-              onStepClick={handleStepClick}
-              className="border-r border-slate-800 bg-slate-900"
-              style={{ width: leftWidth }}
-              isGenerateDisabled={isRuntimeConfigLoading}
-              isGenerateLoading={isGenerating}
-            />
-
-            {/* Drag Handle Left */}
-            <div 
-              className="w-1 cursor-col-resize bg-slate-800 hover:bg-blue-500 z-30 transition-colors"
-              onMouseDown={() => setIsDraggingLeft(true)}
-            />
-
-            {/* Center Column: Preview Workspace */}
-            <div className="flex-1 flex flex-col min-w-0 border-r border-slate-800 relative">
-              <CenterPreviewWorkspace
-                activeSlide={activeSlide}
-                totalSlides={slides.length}
-                selectedElementId={selectedElementId}
-                onSelectElement={setSelectedElementId}
-                onUpdateElement={handleUpdateElement}
-                onNext={handleNextSlide}
-                onPrev={handlePrevSlide}
-                designToken={designToken}
-              />
-              
-              {/* Bottom Rail: Thumbnails */}
-              {slides.length > 0 && (
-                <SlideThumbnailRail
-                  slides={slides}
-                  activeSlideId={activeSlideId}
-                  onSelectSlide={(id) => {
-                    setActiveSlideId(id);
-                    setSelectedElementId(null);
-                  }}
+            {!isGenerated ? (
+              // Interview Mode
+              <div className="flex-1 flex flex-col items-center justify-center bg-slate-950 p-6">
+                <div className="w-full max-w-4xl h-[85vh] flex flex-col bg-slate-900 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden">
+                  <ChatInterviewSidebar
+                    messages={messages}
+                    interviewData={flowState.answers as any}
+                    isGenerated={isGenerated}
+                    onSendMessage={handleSendMessage}
+                    onSelectStyle={handleSelectStyle}
+                    onGenerate={handleGenerate}
+                    onStepClick={handleStepClick}
+                    className="w-full h-full"
+                    isGenerateDisabled={isRuntimeConfigLoading}
+                    isGenerateLoading={isGenerating}
+                    flowState={flowState}
+                    nextQuestion={nextQuestion}
+                    isComplete={isComplete}
+                    progress={progress}
+                  />
+                </div>
+                {/* Loading Overlay */}
+                {isGenerating && (
+                  <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm">
+                    <Loader2 className="w-12 h-12 text-blue-500 animate-spin mb-4" />
+                    <p className="text-lg font-medium text-slate-200">{generationProgress}</p>
+                    <p className="text-sm text-slate-400 mt-2">これには数十秒かかる場合があります...</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              // Editor Mode
+              <>
+                {/* Left Column: Chat Workflow & Context */}
+                <ChatInterviewSidebar
+                  messages={messages}
+                  interviewData={flowState.answers as any}
+                  isGenerated={isGenerated}
+                  onSendMessage={handleSendMessage}
+                  onSelectStyle={handleSelectStyle}
+                  onGenerate={handleGenerate}
+                  onStepClick={handleStepClick}
+                  className="border-r border-slate-800 bg-slate-900"
+                  style={{ width: leftWidth }}
+                  isGenerateDisabled={isRuntimeConfigLoading}
+                  isGenerateLoading={isGenerating}
+                  flowState={flowState}
+                  nextQuestion={nextQuestion}
+                  isComplete={isComplete}
+                  progress={progress}
                 />
-              )}
-            </div>
 
-            {/* Drag Handle Right */}
-            <div 
-              className="w-1 cursor-col-resize bg-slate-800 hover:bg-blue-500 z-30 transition-colors"
-              onMouseDown={() => setIsDraggingRight(true)}
-            />
+                {/* Drag Handle Left */}
+                <div
+                  className="w-1 cursor-col-resize bg-slate-800 hover:bg-blue-500 z-30 transition-colors"
+                  onMouseDown={() => setIsDraggingLeft(true)}
+                />
 
-            {/* Right Column: Inspector Panel */}
-            <div style={{ width: rightWidth }} className="shrink-0 bg-slate-900 overflow-y-auto">
-              <RightInspectorPanel 
-                activeSlide={activeSlide}
-                selectedElement={selectedElement}
-                onUpdateElement={handleUpdateElement}
-                onSelectElement={setSelectedElementId}
-              />
-            </div>
+                {/* Center Column: Preview Workspace */}
+                <div className="flex-1 flex flex-col min-w-0 border-r border-slate-800 relative">
+                  <CenterPreviewWorkspace
+                    activeSlide={activeSlide}
+                    totalSlides={slides.length}
+                    selectedElementId={selectedElementId}
+                    onSelectElement={setSelectedElementId}
+                    onUpdateElement={(id, updates) => {
+                      setSlides((prev) =>
+                        prev.map((slide) => {
+                          if (slide.id !== activeSlideId) return slide;
+                          return {
+                            ...slide,
+                            elements: slide.elements.map((el) =>
+                              el.id === id ? { ...el, ...updates } : el
+                            ),
+                          };
+                        })
+                      );
+                      triggerAutosave('slides');
+                    }}
+                    onNext={() => {
+                      if (activeSlideIndex < slides.length - 1) {
+                        setActiveSlideId(slides[activeSlideIndex + 1].id);
+                        setSelectedElementId(null);
+                      }
+                    }}
+                    onPrev={() => {
+                      if (activeSlideIndex > 0) {
+                        setActiveSlideId(slides[activeSlideIndex - 1].id);
+                        setSelectedElementId(null);
+                      }
+                    }}
+                    designToken={designToken}
+                  />
+
+                  {/* Bottom Rail: Thumbnails */}
+                  {slides.length > 0 && (
+                    <SlideThumbnailRail
+                      slides={slides}
+                      activeSlideId={activeSlideId}
+                      onSelectSlide={(id) => {
+                        setActiveSlideId(id);
+                        setSelectedElementId(null);
+                      }}
+                    />
+                  )}
+                </div>
+
+                {/* Drag Handle Right */}
+                <div
+                  className="w-1 cursor-col-resize bg-slate-800 hover:bg-blue-500 z-30 transition-colors"
+                  onMouseDown={() => setIsDraggingRight(true)}
+                />
+
+                {/* Right Column: Inspector Panel */}
+                <div style={{ width: rightWidth }} className="shrink-0 bg-slate-900 overflow-y-auto">
+                  <RightInspectorPanel
+                    activeSlide={activeSlide}
+                    selectedElement={selectedElement}
+                    onUpdateElement={(id, updates) => {
+                      setSlides((prev) =>
+                        prev.map((slide) => {
+                          if (slide.id !== activeSlideId) return slide;
+                          return {
+                            ...slide,
+                            elements: slide.elements.map((el) =>
+                              el.id === id ? { ...el, ...updates } : el
+                            ),
+                          };
+                        })
+                      );
+                      triggerAutosave('slides');
+                    }}
+                    onSelectElement={setSelectedElementId}
+                  />
+                </div>
+              </>
+            )}
           </>
         )}
       </div>
+
+      {/* Project History Panel */}
+      {isHistoryOpen && (
+        <ProjectHistoryPanel
+          projects={projects}
+          isLoading={isProjectsLoading}
+          onOpen={handleOpenProject}
+          onDuplicate={(id) => {
+            duplicateProject(id).then((duplicated) => {
+              openProject(duplicated.id);
+              setIsHistoryOpen(false);
+            });
+          }}
+          onDelete={async (id) => {
+            await deleteProject(id);
+            if (activeProject?.id === id) {
+              handleNew();
+            }
+          }}
+          onClose={() => setIsHistoryOpen(false)}
+        />
+      )}
 
       {/* API Key Settings Modal */}
       <ApiKeySettingsModal

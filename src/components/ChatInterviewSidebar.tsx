@@ -1,10 +1,18 @@
+/**
+ * Chat Interview Sidebar Component
+ *
+ * 適応的インタビューフローを提供するサイドバー
+ * flowEngine を使用して動的に質問を表示
+ */
+
 import React from 'react';
-import { ChatMessage, InterviewData, StyleOption } from '../demoData';
+import { ChatMessage, InterviewData, StyleOption } from '../types/domain';
 import InterviewProgress from './InterviewProgress';
 import ChatComposer from './ChatComposer';
 import BriefSummaryCard from './BriefSummaryCard';
 import ChatMessageList from './ChatMessageList';
 import { Bot, MessageSquare } from 'lucide-react';
+import type { FlowState, BriefQuestion } from '../brief/flowEngine';
 
 interface ChatInterviewSidebarProps {
   messages: ChatMessage[];
@@ -18,6 +26,11 @@ interface ChatInterviewSidebarProps {
   style?: React.CSSProperties;
   isGenerateDisabled?: boolean;
   isGenerateLoading?: boolean;
+  // New props for flow engine integration
+  flowState: FlowState;
+  nextQuestion: BriefQuestion | null;
+  isComplete: boolean;
+  progress: { current: number; total: number };
 }
 
 export default function ChatInterviewSidebar({
@@ -28,24 +41,15 @@ export default function ChatInterviewSidebar({
   onSelectStyle,
   onGenerate,
   onStepClick,
-  className = "",
+  className = '',
   style,
   isGenerateDisabled = false,
   isGenerateLoading = false,
+  flowState,
+  nextQuestion,
+  isComplete,
+  progress,
 }: ChatInterviewSidebarProps) {
-  
-  // Calculate progress based on interviewData fields filled
-  const totalSteps = 7;
-  let currentStep = 0;
-  if (interviewData.theme) currentStep++;
-  if (interviewData.styleId) currentStep++;
-  if (interviewData.slideCount) currentStep++;
-  if (interviewData.targetAudience) currentStep++;
-  if (interviewData.keyMessage) currentStep++;
-  if (interviewData.tone) currentStep++;
-  if (interviewData.supplementary !== undefined) currentStep++;
-
-  const isComplete = currentStep >= 7;
   const lastMessage = messages[messages.length - 1];
   const isWaitingForChips = lastMessage?.inputMode === 'options';
 
@@ -58,42 +62,34 @@ export default function ChatInterviewSidebar({
           AI アシスタント
         </h2>
       </div>
-      <InterviewProgress currentStep={currentStep} totalSteps={totalSteps} onStepClick={onStepClick} />
+      <InterviewProgress
+        currentStep={progress.current}
+        totalSteps={progress.total}
+        onStepClick={onStepClick}
+      />
 
       {/* Chat Messages */}
       <div className="flex-1 overflow-y-auto custom-scrollbar relative">
         {messages.length === 1 && messages[0].id === 'welcome-msg' && (
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full px-6 space-y-3">
             <button
-              onClick={() => onSendMessage('サンプルで試す')}
+              onClick={() => onSendMessage('テーマを入力する')}
               className="w-full text-left p-3 bg-slate-950 border border-slate-800 hover:border-blue-500/50 hover:bg-blue-500/5 rounded-xl flex items-center gap-3 transition-all group"
             >
               <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0 group-hover:bg-blue-500/20 transition-colors">
                 <Bot className="w-4 h-4 text-blue-400" />
               </div>
               <div>
-                <p className="text-xs font-medium text-slate-200">サンプルで試す</p>
-                <p className="text-[10px] text-slate-500 mt-0.5">AI導入に関するデモデータで開始</p>
-              </div>
-            </button>
-            <button
-              onClick={() => onSendMessage('テーマを入力する')}
-              className="w-full text-left p-3 bg-slate-950 border border-slate-800 hover:border-slate-600 hover:bg-slate-800/50 rounded-xl flex items-center gap-3 transition-all group"
-            >
-              <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center shrink-0 group-hover:bg-slate-700 transition-colors">
-                <MessageSquare className="w-4 h-4 text-slate-400" />
-              </div>
-              <div>
-                <p className="text-xs font-medium text-slate-200">テーマを入力する</p>
-                <p className="text-[10px] text-slate-500 mt-0.5">対話形式で要件を定義します</p>
+                <p className="text-xs font-medium text-slate-200">対話形式で始める</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">テーマを入力してインタビューを開始</p>
               </div>
             </button>
           </div>
         )}
-        <ChatMessageList 
-          messages={messages} 
-          onSelectOption={onSelectStyle} 
-          isGenerated={isGenerated} 
+        <ChatMessageList
+          messages={messages}
+          onSelectOption={onSelectStyle}
+          isGenerated={isGenerated}
         />
       </div>
 
@@ -101,11 +97,12 @@ export default function ChatInterviewSidebar({
       {isComplete && !isGenerated && (
         <BriefSummaryCard
           interviewData={interviewData}
-          styles={messages.find(m => m.optionsType === 'grid')?.options || []}
+          styles={messages.find((m) => m.optionsType === 'grid')?.options || []}
           onGenerate={onGenerate}
           isGenerated={isGenerated}
           isGenerateDisabled={isGenerateDisabled}
           isGenerateLoading={isGenerateLoading}
+          compiledBrief={flowState.answers}
         />
       )}
       {(!isComplete || isGenerated) && (
@@ -113,17 +110,18 @@ export default function ChatInterviewSidebar({
           {isGenerated && (
             <BriefSummaryCard
               interviewData={interviewData}
-              styles={messages.find(m => m.optionsType === 'grid')?.options || []}
+              styles={messages.find((m) => m.optionsType === 'grid')?.options || []}
               onGenerate={onGenerate}
               isGenerated={isGenerated}
               isGenerateDisabled={isGenerateDisabled}
               isGenerateLoading={isGenerateLoading}
+              compiledBrief={flowState.answers}
             />
           )}
-          <ChatComposer 
-            onSend={onSendMessage} 
-            disabled={isWaitingForChips} 
-            placeholder={isWaitingForChips ? "上の選択肢から選んでください" : "追加の指示を入力..."}
+          <ChatComposer
+            onSend={onSendMessage}
+            disabled={isWaitingForChips}
+            placeholder={isWaitingForChips ? '上の選択肢から選んでください' : '追加の指示を入力...'}
           />
         </div>
       )}

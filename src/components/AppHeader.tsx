@@ -1,13 +1,14 @@
 import React from 'react';
-import { Sparkles, Plus, Settings } from 'lucide-react';
+import { Sparkles, Plus, Settings, Clock } from 'lucide-react';
 
 interface AppHeaderProps {
   onNew?: () => void;
+  onOpenHistory?: () => void;
   onOpenSettings?: () => void;
   isGenerated?: boolean;
 }
 
-export default function AppHeader({ onNew, onOpenSettings, isGenerated }: AppHeaderProps) {
+export default function AppHeader({ onNew, onOpenHistory, onOpenSettings, isGenerated }: AppHeaderProps) {
   return (
     <header className="h-14 bg-slate-950 border-b border-slate-800 flex items-center justify-between px-6 shrink-0 z-40">
       <div className="flex items-center gap-3">
@@ -21,13 +22,23 @@ export default function AppHeader({ onNew, onOpenSettings, isGenerated }: AppHea
       </div>
 
       <div className="flex items-center gap-2">
-        {isGenerated && onNew && (
+        {onNew && (
           <button
             onClick={onNew}
             className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg transition-colors border border-slate-700"
           >
             <Plus className="w-4 h-4" />
             新規作成
+          </button>
+        )}
+        {onOpenHistory && (
+          <button
+            onClick={onOpenHistory}
+            className="p-2 hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition-colors rounded-lg"
+            aria-label="プロジェクト履歴"
+            title="プロジェクト履歴"
+          >
+            <Clock className="w-5 h-5" />
           </button>
         )}
         {onOpenSettings && (

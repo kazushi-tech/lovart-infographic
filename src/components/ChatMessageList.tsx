@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { ChatMessage, StyleOption } from '../demoData';
+import { ChatMessage, StyleOption } from '../types/domain';
 import ChatMessageBubble from './ChatMessageBubble';
 
 interface ChatMessageListProps {
