@@ -1,0 +1,39 @@
+# General
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment
+.env
+.env*.local
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude Code (local-only files)
+.claude/worktrees/
+.claude/settings.local.json
+
+# Test/verification artifacts
+test-results/
+verify_output/
+.reviews/
+
+# Generated images
+Gemini_Generated_Image_*
+
+# Windows
+nul
