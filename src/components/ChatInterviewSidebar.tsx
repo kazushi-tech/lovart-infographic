@@ -16,18 +16,22 @@ interface ChatInterviewSidebarProps {
   onStepClick?: (step: number) => void;
   className?: string;
   style?: React.CSSProperties;
+  isGenerateDisabled?: boolean;
+  isGenerateLoading?: boolean;
 }
 
-export default function ChatInterviewSidebar({ 
-  messages, 
-  interviewData, 
-  isGenerated, 
-  onSendMessage, 
-  onSelectStyle, 
+export default function ChatInterviewSidebar({
+  messages,
+  interviewData,
+  isGenerated,
+  onSendMessage,
+  onSelectStyle,
   onGenerate,
   onStepClick,
   className = "",
-  style
+  style,
+  isGenerateDisabled = false,
+  isGenerateLoading = false,
 }: ChatInterviewSidebarProps) {
   
   // Calculate progress based on interviewData fields filled
@@ -95,21 +99,25 @@ export default function ChatInterviewSidebar({
 
       {/* Footer Area (Composer or Summary) */}
       {isComplete && !isGenerated && (
-        <BriefSummaryCard 
-          interviewData={interviewData} 
+        <BriefSummaryCard
+          interviewData={interviewData}
           styles={messages.find(m => m.optionsType === 'grid')?.options || []}
-          onGenerate={onGenerate} 
+          onGenerate={onGenerate}
           isGenerated={isGenerated}
+          isGenerateDisabled={isGenerateDisabled}
+          isGenerateLoading={isGenerateLoading}
         />
       )}
       {(!isComplete || isGenerated) && (
         <div className="flex flex-col">
           {isGenerated && (
-            <BriefSummaryCard 
-              interviewData={interviewData} 
+            <BriefSummaryCard
+              interviewData={interviewData}
               styles={messages.find(m => m.optionsType === 'grid')?.options || []}
-              onGenerate={onGenerate} 
+              onGenerate={onGenerate}
               isGenerated={isGenerated}
+              isGenerateDisabled={isGenerateDisabled}
+              isGenerateLoading={isGenerateLoading}
             />
           )}
           <ChatComposer 

@@ -232,6 +232,11 @@ export default function AppShell() {
   };
 
   const handleGenerate = async () => {
+    // Wait for runtime config to finish loading before making decisions
+    if (isRuntimeConfigLoading) {
+      return;
+    }
+
     // Check for resolvable API key before generation
     if (!hasResolvableKey) {
       setIsSettingsOpen(true);
@@ -387,6 +392,8 @@ export default function AppShell() {
                 onGenerate={handleGenerate}
                 onStepClick={handleStepClick}
                 className="w-full h-full"
+                isGenerateDisabled={isRuntimeConfigLoading}
+                isGenerateLoading={isGenerating}
               />
             </div>
             {/* Loading Overlay */}
@@ -411,6 +418,8 @@ export default function AppShell() {
               onStepClick={handleStepClick}
               className="border-r border-slate-800 bg-slate-900"
               style={{ width: leftWidth }}
+              isGenerateDisabled={isRuntimeConfigLoading}
+              isGenerateLoading={isGenerating}
             />
 
             {/* Drag Handle Left */}

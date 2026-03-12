@@ -1,19 +1,23 @@
 import React from 'react';
 import { InterviewData, StyleOption } from '../demoData';
-import { Sparkles, FileText, Target, MessageSquare, Palette, Edit3, CheckCircle2 } from 'lucide-react';
+import { Sparkles, FileText, Target, MessageSquare, Palette, Edit3, CheckCircle2, Loader2 } from 'lucide-react';
 
 interface BriefSummaryCardProps {
   interviewData: Partial<InterviewData>;
   styles: StyleOption[];
   onGenerate: () => void;
   isGenerated: boolean;
+  isGenerateDisabled?: boolean;
+  isGenerateLoading?: boolean;
 }
 
-export default function BriefSummaryCard({ 
-  interviewData, 
-  styles, 
-  onGenerate, 
-  isGenerated
+export default function BriefSummaryCard({
+  interviewData,
+  styles,
+  onGenerate,
+  isGenerated,
+  isGenerateDisabled = false,
+  isGenerateLoading = false,
 }: BriefSummaryCardProps) {
   return (
     <div className="p-4 bg-slate-900 border-t border-slate-800 shrink-0 shadow-lg z-10">
@@ -49,11 +53,21 @@ export default function BriefSummaryCard({
           <div className="p-4 border-t border-slate-800 bg-slate-900/50 space-y-3">
             <button
               onClick={onGenerate}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-lg text-sm font-medium transition-all shadow-md bg-blue-600 hover:bg-blue-500 text-white shadow-blue-500/20"
+              disabled={isGenerateDisabled || isGenerateLoading}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-lg text-sm font-medium transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white shadow-blue-500/20"
             >
-              <Sparkles className="w-4 h-4" />
-              スライドを生成する
+              {isGenerateLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Sparkles className="w-4 h-4" />
+              )}
+              {isGenerateLoading ? '確認中...' : 'スライドを生成する'}
             </button>
+            {isGenerateDisabled && (
+              <p className="text-[10px] text-slate-500 text-center">
+                APIキー設定を確認中...
+              </p>
+            )}
           </div>
         )}
       </div>

@@ -44,6 +44,11 @@ cp .env.example .env
 npm run dev
 ```
 
+**注意**: `npm run dev` は `NODE_ENV` を設定しないため、常に非プロダクションモードとして扱われます。
+これにより `.env` ファイル内の API キーが `/api/runtime-config` 経由でフォールバックとして利用されます。
+本番デプロイ（Render 等）では `NODE_ENV=production` が設定されるため、フォールバックキーは利用されず、
+ユーザーが UI から API キーを入力する必要があります。
+
 ## API キーについて
 
 ### 開発環境
