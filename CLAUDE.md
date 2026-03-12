@@ -81,6 +81,7 @@ mainブランチへのプッシュで自動デプロイ。
 | ----- | -------- | ------- |
 | codex-review | .claude/skills/ | 厳格な品質レビューゲート |
 | universal-review | .claude/skills/ | 日常の軽量レビュー |
+| dense-plan | .claude/skills/ | 濃密プラン作成（多段レビュー+外部AI+1MS実装） |
 | skill-creator | .claude/skills/ | 新 Skill 作成ガイド |
 | business-slide-review-gate | .agent/skills/ | スライド品質評価 |
 | infographic-benchmark-review | .agent/skills/ | 出力品質ベンチマーク |
