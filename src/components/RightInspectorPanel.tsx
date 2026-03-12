@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ElementData, SlideData } from '../types/domain';
+import { ElementData, SlideData } from '../demoData';
 import DownloadActions from './DownloadActions';
 import { Settings2, Type, Layout, Database, AlertCircle, Info, FileImage, Layers } from 'lucide-react';
 

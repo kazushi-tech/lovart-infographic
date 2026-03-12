@@ -1,5 +1,5 @@
 import React from 'react';
-import { SlideData } from '../types/domain';
+import { SlideData } from '../demoData';
 
 interface SlideThumbnailRailProps {
   slides: SlideData[];
