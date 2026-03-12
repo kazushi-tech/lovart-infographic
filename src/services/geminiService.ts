@@ -2,15 +2,6 @@ import { GoogleGenAI, Type } from '@google/genai';
 import { InterviewData, SlideData, ElementData } from '../demoData';
 import { getDesignToken } from '../designTokens';
 
-declare global {
-  interface Window {
-    aistudio?: {
-      hasSelectedApiKey: () => Promise<boolean>;
-      openSelectKey: () => Promise<void>;
-    };
-  }
-}
-
 const slideStructureSchema = {
   type: Type.ARRAY,
   description: "An array of infographic slides.",
@@ -97,8 +88,13 @@ const slideStructureSchema = {
   }
 };
 
-export async function generateSlideStructure(interviewData: Partial<InterviewData>): Promise<SlideData[]> {
-  const apiKey = (process.env as any).API_KEY || (process.env as any).GEMINI_API_KEY;
+export async function generateSlideStructure(
+  interviewData: Partial<InterviewData>,
+  apiKey: string
+): Promise<SlideData[]> {
+  if (!apiKey) {
+    throw new Error('API key is required');
+  }
   const ai = new GoogleGenAI({ apiKey });
 
   const count = parseInt(interviewData.slideCount || '5', 10);
@@ -192,8 +188,10 @@ export async function generateSlideStructure(interviewData: Partial<InterviewDat
   }
 }
 
-export async function generateBackgroundImage(prompt: string): Promise<string> {
-  const apiKey = (process.env as any).API_KEY || (process.env as any).GEMINI_API_KEY;
+export async function generateBackgroundImage(prompt: string, apiKey: string): Promise<string> {
+  if (!apiKey) {
+    throw new Error('API key is required');
+  }
   const ai = new GoogleGenAI({ apiKey });
 
   try {

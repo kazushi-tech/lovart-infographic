@@ -4,10 +4,12 @@ import ChatInterviewSidebar from './ChatInterviewSidebar';
 import CenterPreviewWorkspace from './CenterPreviewWorkspace';
 import SlideThumbnailRail from './SlideThumbnailRail';
 import RightInspectorPanel from './RightInspectorPanel';
+import ApiKeySettingsModal from './ApiKeySettingsModal';
 import { InterviewData, SlideData, ElementData, ChatMessage } from '../demoData';
 import { Loader2 } from 'lucide-react';
 import { generateSlideStructure, generateBackgroundImage } from '../services/geminiService';
 import { getDesignToken } from '../designTokens';
+import { useApiKeys, ResolvedApiKeys } from '../hooks/useApiKeys';
 
 const QUESTIONS = [
   {
@@ -80,9 +82,20 @@ const QUESTIONS = [
 ];
 
 export default function AppShell() {
+  const {
+    storedKeys,
+    setKeys,
+    clearKeys,
+    resolvedGeminiKey,
+    resolvedImageKey,
+    hasResolvableKey,
+    isRuntimeConfigLoading,
+  } = useApiKeys();
+
   const [isGenerated, setIsGenerated] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationProgress, setGenerationProgress] = useState<string>('');
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [interviewData, setInterviewData] = useState<Partial<InterviewData>>({});
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(-1); // -1: theme, 0-4: QUESTIONS
   const [messages, setMessages] = useState<ChatMessage[]>([{
@@ -219,50 +232,37 @@ export default function AppShell() {
   };
 
   const handleGenerate = async () => {
-    let hasKey = false;
-    if (window.aistudio) {
-      hasKey = await window.aistudio.hasSelectedApiKey();
-      if (!hasKey) {
-        await window.aistudio.openSelectKey();
-        // We assume the user selected a key. If they didn't, the API call will fail and we catch it.
-      }
+    // Check for resolvable API key before generation
+    if (!hasResolvableKey) {
+      setIsSettingsOpen(true);
+      return;
     }
 
     setIsGenerating(true);
     setGenerationProgress('スライド構成を生成中...');
-    
+
     try {
       // 1. Generate structure
-      const newSlides = await generateSlideStructure(interviewData);
+      const newSlides = await generateSlideStructure(interviewData, resolvedGeminiKey);
       setSlides(newSlides);
       setActiveSlideId(newSlides[0].id);
       setIsGenerated(true);
-      
+
       // 2. Generate images sequentially to avoid rate limits
       for (let i = 0; i < newSlides.length; i++) {
         setGenerationProgress(`背景画像を生成中... (${i + 1}/${newSlides.length})`);
         const bgPrompt = newSlides[i].bgPrompt || 'abstract professional business background';
-        const bgUrl = await generateBackgroundImage(bgPrompt);
-        
-        setSlides(prev => prev.map((s, index) => 
+        const bgUrl = await generateBackgroundImage(bgPrompt, resolvedImageKey);
+
+        setSlides(prev => prev.map((s, index) =>
           index === i ? { ...s, imageUrl: bgUrl } : s
         ));
       }
-      
+
       setGenerationProgress('');
     } catch (error: any) {
       console.error(error);
-      const errorMsg = error?.message || '';
-      if (errorMsg.includes('Requested entity was not found') || errorMsg.includes('PERMISSION_DENIED')) {
-        if (window.aistudio) {
-          await window.aistudio.openSelectKey();
-          alert('APIキーの権限がありません。有効な課金済みプロジェクトのAPIキーを選択してください。');
-        } else {
-          alert('生成中にエラーが発生しました。APIキーを確認してください。');
-        }
-      } else {
-        alert('生成中にエラーが発生しました。');
-      }
+      alert('設定した API キーを確認してください。');
     } finally {
       setIsGenerating(false);
     }
@@ -345,6 +345,10 @@ export default function AppShell() {
     setMessages(nextMessages);
   };
 
+  const handleSaveApiKeys = (geminiApiKey: string, imageApiKey: string) => {
+    setKeys({ geminiApiKey, imageApiKey });
+  };
+
   const handleNew = () => {
     setIsGenerated(false);
     setInterviewData({});
@@ -366,9 +370,9 @@ export default function AppShell() {
 
   return (
     <div className="h-screen w-full flex flex-col bg-slate-950 text-slate-200 overflow-hidden font-sans selection:bg-blue-500/30 relative">
-      
+
       {/* App Header */}
-      <AppHeader onNew={handleNew} isGenerated={isGenerated} />
+      <AppHeader onNew={handleNew} onOpenSettings={() => setIsSettingsOpen(true)} isGenerated={isGenerated} />
 
       <div className="flex-1 flex min-h-0 relative">
         {!isGenerated ? (
@@ -459,6 +463,16 @@ export default function AppShell() {
           </>
         )}
       </div>
+
+      {/* API Key Settings Modal */}
+      <ApiKeySettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        initialGeminiApiKey={storedKeys.geminiApiKey}
+        initialImageApiKey={storedKeys.imageApiKey}
+        onSave={handleSaveApiKeys}
+        onClear={clearKeys}
+      />
     </div>
   );
 }

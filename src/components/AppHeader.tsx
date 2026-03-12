@@ -1,12 +1,13 @@
 import React from 'react';
-import { Sparkles, Plus } from 'lucide-react';
+import { Sparkles, Plus, Settings } from 'lucide-react';
 
 interface AppHeaderProps {
   onNew?: () => void;
+  onOpenSettings?: () => void;
   isGenerated?: boolean;
 }
 
-export default function AppHeader({ onNew, isGenerated }: AppHeaderProps) {
+export default function AppHeader({ onNew, onOpenSettings, isGenerated }: AppHeaderProps) {
   return (
     <header className="h-14 bg-slate-950 border-b border-slate-800 flex items-center justify-between px-6 shrink-0 z-40">
       <div className="flex items-center gap-3">
@@ -18,16 +19,27 @@ export default function AppHeader({ onNew, isGenerated }: AppHeaderProps) {
           <p className="text-[10px] text-slate-500 font-medium uppercase tracking-widest">Workspace v2.0</p>
         </div>
       </div>
-      
-      {isGenerated && onNew && (
-        <button
-          onClick={onNew}
-          className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg transition-colors border border-slate-700"
-        >
-          <Plus className="w-4 h-4" />
-          新規作成
-        </button>
-      )}
+
+      <div className="flex items-center gap-2">
+        {isGenerated && onNew && (
+          <button
+            onClick={onNew}
+            className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg transition-colors border border-slate-700"
+          >
+            <Plus className="w-4 h-4" />
+            新規作成
+          </button>
+        )}
+        {onOpenSettings && (
+          <button
+            onClick={onOpenSettings}
+            className="p-2 hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition-colors rounded-lg"
+            aria-label="設定"
+          >
+            <Settings className="w-5 h-5" />
+          </button>
+        )}
+      </div>
     </header>
   );
 }

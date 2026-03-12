@@ -11,6 +11,20 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
+// Runtime config endpoint for development only
+// Returns fallback API keys for local development.
+// In production, keys must be provided by users via UI.
+app.get("/api/runtime-config", (req, res) => {
+  // Production includes production, staging, and test environments
+  // Only expose API keys in development (NODE_ENV === 'development')
+  const isDev = process.env.NODE_ENV === 'development';
+  res.json({
+    devFallbackGeminiKey: isDev ? (process.env.GEMINI_API_KEY || '') : '',
+    devFallbackImageKey: isDev ? (process.env.API_KEY || '') : '',
+    devMode: isDev,
+  });
+});
+
 async function startServer() {
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {

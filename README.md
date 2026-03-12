@@ -44,12 +44,27 @@ cp .env.example .env
 npm run dev
 ```
 
+## API キーについて
+
+### 開発環境
+
+`.env` ファイルに設定した `GEMINI_API_KEY` と `API_KEY` が、`/api/runtime-config` エンドポイント経由で dev-only fallback として利用されます。
+
+### 本番環境
+
+環境変数はサーバー側でのみ利用され、クライアントバンドルには含まれません。
+本番では、ユーザーが UI から自分の API キーを入力する必要があります。
+
+**重要**: 入力された API キーはブラウザの localStorage に保存されます。
+これは利便性のためのものであり、セキュアな vault ではありません。
+共有端末ではログアウト時にキーを削除するようご注意ください。
+
 ## 環境変数
 
 | 変数名 | 必須 | 説明 |
 | ------ | ---- | ---- |
-| `GEMINI_API_KEY` | Yes | Gemini API 呼び出し用。構造生成に使用 |
-| `API_KEY` | Yes | 画像生成用（gemini-3.1-flash-image-preview）。有料プロジェクトキーが必要 |
+| `GEMINI_API_KEY` | No | 開発用 fallback（構造生成向け）。本番では UI 入力を優先 |
+| `API_KEY` | No | 開発用 fallback（画像生成向け）。有料プロジェクトキーが必要。本番では UI 入力を優先 |
 | `APP_URL` | No | ホスティング URL（Render 等でデプロイ時） |
 | `PORT` | No | サーバーポート（デフォルト: 3000） |
 
@@ -85,7 +100,7 @@ npm run lint        # TypeScript 型チェック（tsc --noEmit）
 │   ├── index.css                    # Tailwind v4 エントリ
 │   ├── main.tsx                     # React エントリポイント
 │   └── App.tsx                      # ルートコンポーネント
-├── server.ts                        # Express + Vite dev middleware
+├── server.ts                        # Express + Vite dev middleware + /api/runtime-config
 ├── vite.config.ts
 ├── tsconfig.json
 └── package.json
