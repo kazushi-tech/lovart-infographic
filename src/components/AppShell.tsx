@@ -11,13 +11,13 @@ import ChatInterviewSidebar from './ChatInterviewSidebar';
 import StartWorkspace from './StartWorkspace';
 import ProjectHistoryPanel from './ProjectHistoryPanel';
 import CenterPreviewWorkspace from './CenterPreviewWorkspace';
-import InterviewHistoryPanel from './InterviewHistoryPanel';
+import SlideThumbnailRail from './SlideThumbnailRail';
 import RightInspectorPanel from './RightInspectorPanel';
 import ApiKeySettingsModal from './ApiKeySettingsModal';
 import { SlideData, ElementData, ChatMessage } from '../types/domain';
 import { ProjectRecord, EntryMode } from '../types/project';
 import { Loader2 } from 'lucide-react';
-import { generateSlidesFromBrief, generateBackgroundImage } from '../services/geminiService';
+import { generateSlideStructure, generateBackgroundImage } from '../services/geminiService';
 import { getDesignToken } from '../designTokens';
 import { useApiKeys } from '../hooks/useApiKeys';
 import { useProjectHistory } from '../hooks/useProjectHistory';
@@ -25,11 +25,24 @@ import {
   initializeFlow,
   answerQuestion,
   getNextQuestion,
+  getCurrentQuestion,
+  canGoBack,
+  goBack,
   getProgress,
-  type FlowState,
+  getProgressPercent,
+  getActiveQuestions,
+  areRequiredQuestionsAnswered,
 } from '../brief/flowEngine';
 import { findQuestionById } from '../brief/questionBank';
 import { compileBrief } from '../brief/compileBrief';
+
+// Flow State のインターフェース定義（flowEngine からインポートしても良いが、念のため）
+interface FlowState {
+  answers: Record<string, unknown>;
+  currentQuestionIndex: number;
+  completedQuestionIds: string[];
+  isComplete: boolean;
+}
 
 // 質問オプションの型
 interface QuestionOption {
@@ -209,35 +222,81 @@ export default function AppShell() {
         return;
       }
 
-      // Determine the pending question (next unanswered question)
-      const pendingQuestion = getNextQuestion(flowState);
-      if (!pendingQuestion) {
-        // All questions already answered, nothing to do
+      // Find the current question
+      const currentQuestion = getCurrentQuestion(flowState);
+      if (!currentQuestion) {
+        // No current question, this might be the first answer (theme)
+        const themeQuestion = findQuestionById('theme');
+        if (themeQuestion) {
+          const newFlowState = answerQuestion(flowState, 'theme', text);
+          setFlowState(newFlowState);
+
+          // Add user message
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `msg-${Date.now()}`,
+              role: 'user',
+              text,
+              timestamp: Date.now(),
+            },
+          ]);
+
+          // Add next question or complete
+          const nextQuestion = getNextQuestion(newFlowState);
+          if (nextQuestion) {
+            setMessages((prev) => [
+              ...prev,
+              createQuestionMessage(nextQuestion),
+            ]);
+          } else {
+            // All questions answered
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `msg-${Date.now() + 1}`,
+                role: 'assistant',
+                text: 'ありがとうございます！要件がまとまりました。確認して「生成する」ボタンを押してください。',
+                inputMode: 'none',
+                timestamp: Date.now() + 1,
+              },
+            ]);
+          }
+
+          // Autosave
+          updateActiveProject({
+            interviewData: {
+              theme: text,
+              ...(newFlowState.answers as any),
+            },
+          });
+          triggerAutosave('interviewData');
+        }
         return;
       }
 
-      // Record the answer
+      // Answer the current question
       const answerValue = optionId || text;
-      const newFlowState = answerQuestion(flowState, pendingQuestion.id, answerValue);
+      const newFlowState = answerQuestion(flowState, currentQuestion.id, answerValue);
       setFlowState(newFlowState);
 
-      // Add user message with summarized answer
+      // Add user message
       setMessages((prev) => [
         ...prev,
         {
           id: `msg-${Date.now()}`,
           role: 'user',
-          text: pendingQuestion.summarize(answerValue),
+          text: currentQuestion.summarize(answerValue),
           timestamp: Date.now(),
         },
       ]);
 
       // Get next question or show completion
-      const nextQ = getNextQuestion(newFlowState);
-      if (nextQ) {
+      const nextQuestion = getNextQuestion(newFlowState);
+      if (nextQuestion) {
         setMessages((prev) => [
           ...prev,
-          createQuestionMessage(nextQ),
+          createQuestionMessage(nextQuestion),
         ]);
       } else {
         setMessages((prev) => [
@@ -287,28 +346,15 @@ export default function AppShell() {
     handleSendMessage(option.label, option.id);
   }, [handleSendMessage]);
 
-  // Handle go back to a previous step
-  // step is 0-based index from InterviewProgress (completed step clicked)
+  // Handle go back to previous question
   const handleStepClick = useCallback((step: number) => {
     if (isGenerated) return;
 
-    // Rebuild state: keep answers and completedQuestionIds up to (but not including) the clicked step
-    const keepCount = step; // step is 0-based; keep answers before this index
-    const keptIds = flowState.completedQuestionIds.slice(0, keepCount);
-    const keptAnswers: Record<string, unknown> = {};
-    for (const id of keptIds) {
-      keptAnswers[id] = flowState.answers[id];
-    }
+    // Clear messages and reset to the target question
+    const targetIndex = step - 1;
+    const newFlowState = goBack(flowState);
 
-    // Rebuild flow state
-    const rebuiltState: FlowState = {
-      answers: keptAnswers,
-      currentQuestionIndex: keepCount,
-      completedQuestionIds: keptIds,
-      isComplete: false,
-    };
-
-    // Rebuild messages: welcome + Q&A pairs for kept answers + next question
+    // Re-build messages up to the target question
     const newMessages: ChatMessage[] = [{
       id: 'welcome-msg',
       role: 'assistant',
@@ -316,30 +362,31 @@ export default function AppShell() {
       timestamp: Date.now(),
     }];
 
-    for (let i = 0; i < keptIds.length; i++) {
-      const questionId = keptIds[i];
+    // Add all completed answers
+    for (let i = 0; i < targetIndex; i++) {
+      const questionId = newFlowState.completedQuestionIds[i];
       const question = findQuestionById(questionId);
       if (question) {
-        // Question message
-        newMessages.push(createQuestionMessage(question));
-        // Answer message
         newMessages.push({
-          id: `msg-${Date.now() + i * 2 + 1}`,
+          id: `msg-${Date.now() + i * 2}`,
           role: 'user',
-          text: question.summarize(keptAnswers[questionId]),
-          timestamp: Date.now() + i * 2 + 1,
+          text: question.summarize(newFlowState.answers[questionId]),
+          timestamp: Date.now() + i * 2,
         });
       }
     }
 
-    // Add the next pending question
-    const nextQ = getNextQuestion(rebuiltState);
-    if (nextQ) {
-      newMessages.push(createQuestionMessage(nextQ));
+    // Add the next question if available
+    const nextQuestion = getNextQuestion(newFlowState);
+    if (nextQuestion) {
+      newMessages.push(createQuestionMessage(nextQuestion));
     }
 
     setMessages(newMessages);
-    setFlowState(rebuiltState);
+    setFlowState({
+      ...newFlowState,
+      currentQuestionIndex: targetIndex,
+    });
   }, [flowState, isGenerated]);
 
   // Handle generate slides
@@ -354,31 +401,39 @@ export default function AppShell() {
     setGenerationProgress('スライド構成を生成中...');
 
     try {
-      // Compile the brief from flow answers
-      const brief = compileBrief(flowState.answers);
-      const outputTarget = String(flowState.answers.outputTarget ?? 'lovart-slides');
-      const styleId = String(flowState.answers.slideStyle ?? 'professional');
+      // Compile the brief
+      const compiledBrief = compileBrief(flowState.answers);
 
-      // 1. Generate structure via compiledBrief
-      const newSlides = await generateSlidesFromBrief(brief, resolvedGeminiKey, styleId);
+      // 1. Generate structure
+      const interviewData = flowState.answers as any;
+      const newSlides = await generateSlideStructure(
+        {
+          theme: String(interviewData.theme || ''),
+          styleId: String(interviewData.slideStyle || 'professional'),
+          slideCount: String(interviewData.slideCount || '5'),
+          targetAudience: String(interviewData.targetAudience || ''),
+          keyMessage: '',
+          tone: String(interviewData.tone || 'professional'),
+          supplementary: '',
+        },
+        resolvedGeminiKey
+      );
 
       setSlides(newSlides);
       setActiveSlideId(newSlides[0].id);
       setIsGenerated(true);
 
-      // 2. Generate background images only for lovart-slides
-      if (outputTarget === 'lovart-slides') {
-        for (let i = 0; i < newSlides.length; i++) {
-          setGenerationProgress(`背景画像を生成中... (${i + 1}/${newSlides.length})`);
-          const bgPrompt = newSlides[i].bgPrompt || 'abstract professional business background';
-          const bgUrl = await generateBackgroundImage(bgPrompt, resolvedImageKey);
+      // 2. Generate images sequentially
+      for (let i = 0; i < newSlides.length; i++) {
+        setGenerationProgress(`背景画像を生成中... (${i + 1}/${newSlides.length})`);
+        const bgPrompt = newSlides[i].bgPrompt || 'abstract professional business background';
+        const bgUrl = await generateBackgroundImage(bgPrompt, resolvedImageKey);
 
-          setSlides((prev) =>
-            prev.map((s, index) =>
-              index === i ? { ...s, imageUrl: bgUrl } : s
-            )
-          );
-        }
+        setSlides((prev) =>
+          prev.map((s, index) =>
+            index === i ? { ...s, imageUrl: bgUrl } : s
+          )
+        );
       }
 
       // Update project status
@@ -480,7 +535,7 @@ export default function AppShell() {
             {!isGenerated ? (
               // Interview Mode
               <div className="flex-1 flex flex-col items-center justify-center bg-slate-950 p-6">
-                <div className="w-full max-w-5xl mx-auto h-[85vh] flex flex-col bg-slate-900 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden">
+                <div className="w-full max-w-4xl h-[85vh] flex flex-col bg-slate-900 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden">
                   <ChatInterviewSidebar
                     messages={messages}
                     interviewData={flowState.answers as any}
@@ -508,13 +563,25 @@ export default function AppShell() {
                 )}
               </div>
             ) : (
-              // Editor Mode — 3 column layout
+              // Editor Mode
               <>
-                {/* Left Column: Interview History (read-only) */}
-                <InterviewHistoryPanel
-                  flowState={flowState}
+                {/* Left Column: Chat Workflow & Context */}
+                <ChatInterviewSidebar
+                  messages={messages}
+                  interviewData={flowState.answers as any}
+                  isGenerated={isGenerated}
+                  onSendMessage={handleSendMessage}
+                  onSelectStyle={handleSelectStyle}
+                  onGenerate={handleGenerate}
+                  onStepClick={handleStepClick}
                   className="border-r border-slate-800 bg-slate-900"
                   style={{ width: leftWidth }}
+                  isGenerateDisabled={isRuntimeConfigLoading}
+                  isGenerateLoading={isGenerating}
+                  flowState={flowState}
+                  nextQuestion={nextQuestion}
+                  isComplete={isComplete}
+                  progress={progress}
                 />
 
                 {/* Drag Handle Left */}
@@ -523,32 +590,53 @@ export default function AppShell() {
                   onMouseDown={() => setIsDraggingLeft(true)}
                 />
 
-                {/* Center Column: All slides vertically scrollable */}
+                {/* Center Column: Preview Workspace */}
                 <div className="flex-1 flex flex-col min-w-0 border-r border-slate-800 relative">
                   <CenterPreviewWorkspace
-                    slides={slides}
-                    activeSlideId={activeSlideId}
+                    activeSlide={activeSlide}
+                    totalSlides={slides.length}
                     selectedElementId={selectedElementId}
-                    onSelectSlide={(id) => {
-                      setActiveSlideId(id);
-                    }}
                     onSelectElement={setSelectedElementId}
-                    onUpdateElement={(elementId, updates) => {
+                    onUpdateElement={(id, updates) => {
                       setSlides((prev) =>
                         prev.map((slide) => {
                           if (slide.id !== activeSlideId) return slide;
                           return {
                             ...slide,
                             elements: slide.elements.map((el) =>
-                              el.id === elementId ? { ...el, ...updates } : el
+                              el.id === id ? { ...el, ...updates } : el
                             ),
                           };
                         })
                       );
                       triggerAutosave('slides');
                     }}
+                    onNext={() => {
+                      if (activeSlideIndex < slides.length - 1) {
+                        setActiveSlideId(slides[activeSlideIndex + 1].id);
+                        setSelectedElementId(null);
+                      }
+                    }}
+                    onPrev={() => {
+                      if (activeSlideIndex > 0) {
+                        setActiveSlideId(slides[activeSlideIndex - 1].id);
+                        setSelectedElementId(null);
+                      }
+                    }}
                     designToken={designToken}
                   />
+
+                  {/* Bottom Rail: Thumbnails */}
+                  {slides.length > 0 && (
+                    <SlideThumbnailRail
+                      slides={slides}
+                      activeSlideId={activeSlideId}
+                      onSelectSlide={(id) => {
+                        setActiveSlideId(id);
+                        setSelectedElementId(null);
+                      }}
+                    />
+                  )}
                 </div>
 
                 {/* Drag Handle Right */}

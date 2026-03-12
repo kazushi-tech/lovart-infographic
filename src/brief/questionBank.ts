@@ -3,7 +3,7 @@
  * Question Bank for Adaptive Interview
  */
 
-import { BriefQuestion } from './briefTypes';
+import { BriefQuestion, BriefAnswer } from './briefTypes';
 
 /**
  * コア質問（必須）
@@ -113,7 +113,7 @@ export const slideQuestions: BriefQuestion[] = [
       { id: 'storytelling', label: 'ストーリーテリング（ナラティブ）' },
     ],
     shouldAsk: (answers) => {
-      return answers.outputTarget === 'lovart-slides';
+      return (answers.outputTarget as BriefAnswer | undefined)?.value === 'lovart-slides';
     },
     summarize: (answer) => {
       const labels: Record<string, string> = {
@@ -139,7 +139,7 @@ export const slideQuestions: BriefQuestion[] = [
       { id: '13+', label: '13枚以上（包括的）' },
     ],
     shouldAsk: (answers) => {
-      return answers.outputTarget === 'lovart-slides';
+      return (answers.outputTarget as BriefAnswer | undefined)?.value === 'lovart-slides';
     },
     summarize: (answer) => `${answer}枚`,
   },
@@ -157,7 +157,7 @@ export const slideQuestions: BriefQuestion[] = [
       { id: 'neutral', label: 'ニュートラル' },
     ],
     shouldAsk: (answers) => {
-      return answers.outputTarget === 'lovart-slides';
+      return (answers.outputTarget as BriefAnswer | undefined)?.value === 'lovart-slides';
     },
     summarize: (answer) => {
       const labels: Record<string, string> = {
@@ -184,7 +184,7 @@ export const slideQuestions: BriefQuestion[] = [
       { id: 'investor', label: '投資家' },
     ],
     shouldAsk: (answers) => {
-      return answers.outputTarget === 'lovart-slides';
+      return (answers.outputTarget as BriefAnswer | undefined)?.value === 'lovart-slides';
     },
     summarize: (answer) => {
       const labels: Record<string, string> = {
@@ -215,7 +215,7 @@ export const infographicQuestions: BriefQuestion[] = [
       { id: 'review', label: 'レビュー中' },
     ],
     shouldAsk: (answers) => {
-      return answers.outputTarget === 'external-infographic-image';
+      return (answers.outputTarget as BriefAnswer | undefined)?.value === 'external-infographic-image';
     },
     summarize: (answer) => {
       const labels: Record<string, string> = {
@@ -233,7 +233,7 @@ export const infographicQuestions: BriefQuestion[] = [
     required: false,
     category: 'structure',
     shouldAsk: (answers) => {
-      return answers.outputTarget === 'external-infographic-image';
+      return (answers.outputTarget as BriefAnswer | undefined)?.value === 'external-infographic-image';
     },
     summarize: (answer) => String(answer),
   },
@@ -250,7 +250,7 @@ export const infographicQuestions: BriefQuestion[] = [
       { id: '8+', label: '8個以上（複雑）' },
     ],
     shouldAsk: (answers) => {
-      return answers.outputTarget === 'external-infographic-image';
+      return (answers.outputTarget as BriefAnswer | undefined)?.value === 'external-infographic-image';
     },
     summarize: (answer) => `${answer}個のビジュアルゾーン`,
   },
@@ -265,7 +265,7 @@ export const infographicQuestions: BriefQuestion[] = [
       { id: 'false', label: 'いいえ（引用を表示しない）' },
     ],
     shouldAsk: (answers) => {
-      return answers.outputTarget === 'external-infographic-image';
+      return (answers.outputTarget as BriefAnswer | undefined)?.value === 'external-infographic-image';
     },
     summarize: (answer) => answer === 'true' ? '引用を表示' : '引用を表示しない',
   },
@@ -282,7 +282,7 @@ export const infographicQuestions: BriefQuestion[] = [
       { id: '9:16', label: '9:16（縦長・モバイル）' },
     ],
     shouldAsk: (answers) => {
-      return answers.outputTarget === 'external-infographic-image';
+      return (answers.outputTarget as BriefAnswer | undefined)?.value === 'external-infographic-image';
     },
     summarize: (answer) => `アスペクト比 ${answer}`,
   },
@@ -318,7 +318,7 @@ export function getQuestionsByCategory(
  * 回答に基づいて次に質問すべき質問リストを取得
  */
 export function getEligibleQuestions(
-  answers: Record<string, unknown>
+  answers: Record<string, BriefAnswer>
 ): BriefQuestion[] {
   return allQuestions.filter((q) => q.shouldAsk(answers));
 }
@@ -327,7 +327,7 @@ export function getEligibleQuestions(
  * 必須質問がすべて回答済みかチェック
  */
 export function areRequiredQuestionsAnswered(
-  answers: Record<string, unknown>
+  answers: Record<string, BriefAnswer>
 ): boolean {
   const eligibleRequired = allQuestions.filter((q) => q.required && q.shouldAsk(answers));
   return eligibleRequired.every((q) => answers[q.id] !== undefined);
