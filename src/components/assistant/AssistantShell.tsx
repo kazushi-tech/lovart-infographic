@@ -1,6 +1,6 @@
 import React from 'react';
 import { Bot } from 'lucide-react';
-import { INTERVIEW_STEPS, AnswerEntry } from '../../interview/schema';
+import { INTERVIEW_STEPS, AnswerEntry, StepOption, AdaptiveFieldId } from '../../interview/schema';
 import type { BriefDraft } from '../../interview/schema';
 import type { InterviewWizardState } from '../../interview/state';
 import { buildBriefDraft } from '../../interview/state';
@@ -20,6 +20,9 @@ interface AssistantShellProps {
   onCancel: () => void;
   isGenerateDisabled: boolean;
   isGenerateLoading: boolean;
+  // M3: Adaptive options support
+  adaptiveOptions?: Record<AdaptiveFieldId, StepOption[]>;
+  isAdaptiveLoading?: (fieldId: AdaptiveFieldId) => boolean;
 }
 
 export default function AssistantShell({
@@ -33,6 +36,9 @@ export default function AssistantShell({
   onCancel,
   isGenerateDisabled,
   isGenerateLoading,
+
+  adaptiveOptions = { targetAudience: [], keyMessage: [], tone: [], supplementary: [] },
+  isAdaptiveLoading = () => false,
 }: AssistantShellProps) {
   const { activeStepIndex, answers, phase } = wizardState;
   const briefDraft = buildBriefDraft(answers);
@@ -75,6 +81,8 @@ export default function AssistantShell({
       ) : currentStep ? (
         <WizardStepDialog
           step={currentStep}
+          adaptiveOptions={adaptiveOptions}
+          isAdaptiveLoading={isAdaptiveLoading}
           existingAnswer={answers[currentStep.fieldId]}
           onCommit={onAnswerCommit}
           onBack={onBack}

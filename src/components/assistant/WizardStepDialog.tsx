@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronLeft } from 'lucide-react';
-import type { InterviewStep, StepOption, AnswerEntry } from '../../interview/schema';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { ChevronLeft, Loader2 } from 'lucide-react';
+import type { InterviewStep, StepOption, AnswerEntry, AdaptiveFieldId } from '../../interview/schema';
 import ChoiceOptionCard from './ChoiceOptionCard';
 
 interface WizardStepDialogProps {
@@ -9,6 +9,9 @@ interface WizardStepDialogProps {
   onCommit: (entry: AnswerEntry) => void;
   onBack?: () => void;
   isFirst: boolean;
+  // M3: Adaptive options support
+  adaptiveOptions?: Record<AdaptiveFieldId, StepOption[]>;
+  isAdaptiveLoading?: (fieldId: AdaptiveFieldId) => boolean;
 }
 
 export default function WizardStepDialog({
@@ -17,7 +20,25 @@ export default function WizardStepDialog({
   onCommit,
   onBack,
   isFirst,
+  adaptiveOptions = { targetAudience: [], keyMessage: [], tone: [], supplementary: [] },
+  isAdaptiveLoading = () => false,
 }: WizardStepDialogProps) {
+  // M3: Merge adaptive options with default options
+  const mergedOptions = useMemo(() => {
+    const relevantAdaptive = adaptiveOptions[step.fieldId as AdaptiveFieldId] || [];
+    if (relevantAdaptive.length > 0) {
+      const defaultIds = step.options?.map(o => o.id) || [];
+      // Add adaptive options that aren't already in defaults
+      const newAdaptive = relevantAdaptive.filter(ao => !defaultIds.includes(ao.id));
+      return [...(step.options || []), ...newAdaptive];
+    }
+    return step.options || [];
+  }, [step.options, adaptiveOptions, step.fieldId]);
+
+  const isAdaptiveField = step.fieldId === 'targetAudience' || step.fieldId === 'keyMessage' || step.fieldId === 'tone' || step.fieldId === 'supplementary';
+
+  // Use merged options
+  const optionsToRender = mergedOptions;
   const [pendingChoice, setPendingChoice] = useState<StepOption | null>(null);
   const [textValue, setTextValue] = useState('');
   const [customText, setCustomText] = useState('');
@@ -166,7 +187,7 @@ export default function WizardStepDialog({
           </div>
         ) : step.inputType === 'grid-choice' ? (
           <div className="grid grid-cols-2 gap-3 mt-2">
-            {step.options?.map(opt => (
+            {optionsToRender.map(opt => (
               <React.Fragment key={opt.id}>
                 <ChoiceOptionCard
                   option={opt}
@@ -177,10 +198,17 @@ export default function WizardStepDialog({
                 />
               </React.Fragment>
             ))}
+            {/* Adaptive loading indicator */}
+            {isAdaptiveField && isAdaptiveLoading(step.fieldId as AdaptiveFieldId) && (
+              <div className="col-span-2 flex items-center gap-2 text-slate-400 text-sm py-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>AIがオプションを生成中...</span>
+              </div>
+            )}
           </div>
         ) : (
           <div className="space-y-2 mt-2">
-            {step.options?.map(opt => (
+            {optionsToRender.map(opt => (
               <React.Fragment key={opt.id}>
                 <ChoiceOptionCard
                   option={opt}
@@ -191,6 +219,13 @@ export default function WizardStepDialog({
                 />
               </React.Fragment>
             ))}
+            {/* Adaptive loading indicator */}
+            {isAdaptiveField && isAdaptiveLoading(step.fieldId as AdaptiveFieldId) && (
+              <div className="flex items-center gap-2 text-slate-400 text-sm py-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>AIがオプションを生成中...</span>
+              </div>
+            )}
             {/* Custom text input when "その他" is selected */}
             {isCustomMode && (
               <div className="mt-3 pl-7">
