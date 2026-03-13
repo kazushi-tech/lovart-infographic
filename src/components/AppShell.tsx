@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useReducer, useMemo } from 'react';
 import AppHeader from './AppHeader';
-import InterviewWizard from './InterviewWizard';
+import AssistantShell from './assistant/AssistantShell';
 import ChatInterviewSidebar from './ChatInterviewSidebar';
 import CenterPreviewWorkspace from './CenterPreviewWorkspace';
 import SlideThumbnailRail from './SlideThumbnailRail';
@@ -101,6 +101,13 @@ export default function AppShell() {
     setScreen('wizard');
   };
 
+  const handleStartInterview = () => {
+    // Ensure wizard is in collecting phase at step 0
+    if (wizardState.phase !== 'collecting' || wizardState.activeStepIndex !== 0) {
+      dispatch({ type: 'reset' });
+    }
+    setScreen('wizard');
+  };
   const handleSample = () => {
     dispatch({ type: 'loadSample' });
     setScreen('review');
@@ -223,19 +230,18 @@ export default function AppShell() {
       <div className="flex-1 flex min-h-0 relative">
         {!isGenerated ? (
           <div className="flex-1 flex flex-col items-center justify-center bg-slate-950 p-6">
-            <div className="w-full max-w-4xl h-[85vh] flex flex-col bg-slate-900 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden">
-              <InterviewWizard
-                state={wizardState}
-                onAnswerCommit={handleAnswerCommit}
-                onBack={handleWizardBack}
-                onGoToStep={handleWizardGoToStep}
-                onCancel={handleNew}
-                onSample={handleSample}
-                onGenerate={handleGenerate}
-                isGenerateDisabled={isRuntimeConfigLoading}
-                isGenerateLoading={isGenerating}
-              />
-            </div>
+            <AssistantShell
+              wizardState={wizardState}
+              onAnswerCommit={handleAnswerCommit}
+              onBack={handleWizardBack}
+              onGoToStep={handleWizardGoToStep}
+              onStartInterview={handleStartInterview}
+              onSample={handleSample}
+              onGenerate={handleGenerate}
+              onCancel={handleNew}
+              isGenerateDisabled={isRuntimeConfigLoading}
+              isGenerateLoading={isGenerating}
+            />
             {/* Loading Overlay */}
             {(screen === 'generating' || isGenerating) && (
               <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm">

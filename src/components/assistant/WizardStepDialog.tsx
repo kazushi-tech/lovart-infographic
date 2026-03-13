@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { InterviewStep, StepOption, AnswerEntry } from '../interview/schema';
+import type { InterviewStep, StepOption, AnswerEntry } from '../../interview/schema';
+import ChoiceOptionCard from './ChoiceOptionCard';
 
-interface QuestionStepCardProps {
+interface WizardStepDialogProps {
   step: InterviewStep;
   existingAnswer?: AnswerEntry;
   onCommit: (entry: AnswerEntry) => void;
@@ -9,15 +10,18 @@ interface QuestionStepCardProps {
   isFirst: boolean;
 }
 
-export default function QuestionStepCard({
+export default function WizardStepDialog({
   step,
   existingAnswer,
   onCommit,
   onBack,
   isFirst,
-}: QuestionStepCardProps) {
+}: WizardStepDialogProps) {
   const [pendingChoice, setPendingChoice] = useState<StepOption | null>(null);
   const [textValue, setTextValue] = useState('');
+  const [customText, setCustomText] = useState('');
+
+  const isCustomMode = pendingChoice?.mode === 'custom';
 
   // Restore existing answer when navigating back
   useEffect(() => {
@@ -26,11 +30,21 @@ export default function QuestionStepCard({
         setTextValue(existingAnswer.value);
       } else {
         const opt = step.options?.find(o => o.id === existingAnswer.value);
-        setPendingChoice(opt ?? null);
+        if (opt) {
+          setPendingChoice(opt);
+        } else if (existingAnswer.source === 'text') {
+          // Was a custom "other" entry
+          const otherOpt = step.options?.find(o => o.mode === 'custom');
+          if (otherOpt) {
+            setPendingChoice(otherOpt);
+            setCustomText(existingAnswer.label);
+          }
+        }
       }
     } else {
       setPendingChoice(null);
       setTextValue('');
+      setCustomText('');
     }
   }, [step.fieldId, existingAnswer]);
 
@@ -44,21 +58,33 @@ export default function QuestionStepCard({
         source: 'text',
       });
     } else if (pendingChoice) {
-      onCommit({
-        fieldId: step.fieldId,
-        value: pendingChoice.id,
-        label: pendingChoice.label,
-        source: 'choice',
-      });
+      if (isCustomMode) {
+        if (!customText.trim()) return;
+        onCommit({
+          fieldId: step.fieldId,
+          value: customText.trim(),
+          label: customText.trim(),
+          source: 'text',
+        });
+      } else {
+        onCommit({
+          fieldId: step.fieldId,
+          value: pendingChoice.id,
+          label: pendingChoice.label,
+          source: 'choice',
+        });
+      }
     }
   };
 
-  const canCommit = step.inputType === 'text' ? textValue.trim().length > 0 : pendingChoice !== null;
+  const canCommit = step.inputType === 'text'
+    ? textValue.trim().length > 0
+    : pendingChoice !== null && (!isCustomMode || customText.trim().length > 0);
 
   return (
     <div className="flex flex-col h-full">
       {/* Question */}
-      <div className="px-6 pt-8 pb-4">
+      <div className="px-6 pt-6 pb-3">
         <h2 className="text-lg font-semibold text-slate-100 leading-relaxed">
           {step.question}
         </h2>
@@ -83,62 +109,48 @@ export default function QuestionStepCard({
           </div>
         ) : step.inputType === 'grid-choice' ? (
           <div className="grid grid-cols-2 gap-3 mt-2">
-            {step.options?.map(opt => {
-              const isSelected = pendingChoice?.id === opt.id;
-              return (
-                <button
-                  key={opt.id}
-                  onClick={() => setPendingChoice(opt)}
-                  className={`text-left rounded-xl border overflow-hidden transition-all ${
-                    isSelected
-                      ? 'border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/30'
-                      : 'border-slate-700 bg-slate-950 hover:border-slate-600 hover:bg-slate-900'
-                  }`}
-                >
-                  {opt.imageUrl && (
-                    <div className="h-24 overflow-hidden">
-                      <img
-                        src={opt.imageUrl}
-                        alt={opt.label}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                  )}
-                  <div className="p-3">
-                    <p className={`text-xs font-medium ${isSelected ? 'text-blue-300' : 'text-slate-200'}`}>
-                      {opt.label}
-                    </p>
-                    {opt.desc && (
-                      <p className="text-[10px] text-slate-500 mt-1">{opt.desc}</p>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
+            {step.options?.map(opt => (
+              <React.Fragment key={opt.id}>
+                <ChoiceOptionCard
+                  option={opt}
+                  isSelected={pendingChoice?.id === opt.id}
+                  onSelect={o => { setPendingChoice(o); setCustomText(''); }}
+                  variant="grid"
+                />
+              </React.Fragment>
+            ))}
           </div>
         ) : (
           <div className="space-y-2 mt-2">
-            {step.options?.map(opt => {
-              const isSelected = pendingChoice?.id === opt.id;
-              return (
-                <button
-                  key={opt.id}
-                  onClick={() => setPendingChoice(opt)}
-                  className={`w-full text-left px-4 py-3 rounded-xl border transition-all ${
-                    isSelected
-                      ? 'border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/30'
-                      : 'border-slate-700 bg-slate-950 hover:border-slate-600 hover:bg-slate-900'
-                  }`}
-                >
-                  <p className={`text-sm font-medium ${isSelected ? 'text-blue-300' : 'text-slate-200'}`}>
-                    {opt.label}
-                  </p>
-                  {opt.desc && (
-                    <p className="text-[10px] text-slate-500 mt-1">{opt.desc}</p>
-                  )}
-                </button>
-              );
-            })}
+            {step.options?.map(opt => (
+              <React.Fragment key={opt.id}>
+                <ChoiceOptionCard
+                  option={opt}
+                  isSelected={pendingChoice?.id === opt.id}
+                  onSelect={o => { setPendingChoice(o); if (o.mode !== 'custom') setCustomText(''); }}
+                  variant="list"
+                />
+              </React.Fragment>
+            ))}
+            {/* Custom text input when "その他" is selected */}
+            {isCustomMode && (
+              <div className="mt-3 pl-7">
+                <input
+                  type="text"
+                  value={customText}
+                  onChange={e => setCustomText(e.target.value)}
+                  placeholder="内容を入力してください..."
+                  autoFocus
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-colors"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && canCommit) {
+                      e.preventDefault();
+                      handleCommit();
+                    }
+                  }}
+                />
+              </div>
+            )}
           </div>
         )}
       </div>

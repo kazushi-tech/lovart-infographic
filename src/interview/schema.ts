@@ -34,6 +34,7 @@ export interface StepOption {
   label: string;
   desc?: string;
   imageUrl?: string;
+  mode?: 'preset' | 'custom'; // 'custom' enables free-text input (e.g. "その他")
 }
 
 export type StepInputType = 'text' | 'single-choice' | 'grid-choice';
@@ -89,6 +90,7 @@ export const INTERVIEW_STEPS: InterviewStep[] = [
       { id: 'managers', label: '部門長・マネージャー' },
       { id: 'staff', label: '一般社員・スタッフ' },
       { id: 'clients', label: '社外クライアント' },
+      { id: 'other', label: 'その他', desc: '自由に入力する', mode: 'custom' },
     ],
     required: true,
   },
@@ -101,6 +103,7 @@ export const INTERVIEW_STEPS: InterviewStep[] = [
       { id: 'growth', label: '売上拡大と事業成長' },
       { id: 'innovation', label: '新規事業とイノベーション' },
       { id: 'risk', label: 'リスク管理とコンプライアンス' },
+      { id: 'other', label: 'その他', desc: '自由に入力する', mode: 'custom' },
     ],
     required: true,
   },
@@ -113,6 +116,7 @@ export const INTERVIEW_STEPS: InterviewStep[] = [
       { id: 'passionate', label: '情熱的・ビジョナリー' },
       { id: 'friendly', label: '親しみやすい・カジュアル' },
       { id: 'urgent', label: '危機感・緊急性' },
+      { id: 'other', label: 'その他', desc: '自由に入力する', mode: 'custom' },
     ],
     required: true,
   },
@@ -125,6 +129,7 @@ export const INTERVIEW_STEPS: InterviewStep[] = [
       { id: 'roadmap', label: '今後のロードマップを明確にしたい' },
       { id: 'comparison', label: '他社との比較を分かりやすくしたい' },
       { id: 'none', label: '特になし' },
+      { id: 'other', label: 'その他', desc: '自由に入力する', mode: 'custom' },
     ],
     required: false,
   },
