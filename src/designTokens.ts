@@ -3,6 +3,8 @@
  * Defines color palette, text colors, and overlay strategy per template.
  */
 
+export type BackgroundMode = 'none' | 'cover-only' | 'all';
+
 export interface DesignToken {
   id: string;
   label: string;
@@ -32,6 +34,10 @@ export interface DesignToken {
   useAiBackground: boolean;
   /** CSS fallback background when AI image is not used or fails */
   fallbackBg: string;
+  /** Background image generation mode (M2) */
+  backgroundMode?: BackgroundMode;
+  /** Layout variant (M6 - to be implemented) */
+  layoutVariant?: 'standard' | 'centered' | 'asymmetric';
 }
 
 export const DESIGN_TOKENS: Record<string, DesignToken> = {
@@ -55,6 +61,7 @@ export const DESIGN_TOKENS: Record<string, DesignToken> = {
     accent: '#2563EB',
     useAiBackground: false,
     fallbackBg: 'linear-gradient(135deg, #F8FAFC 0%, #E2E8F0 50%, #DBEAFE 100%)',
+    backgroundMode: 'none',
   },
   professional: {
     id: 'professional',
@@ -76,6 +83,7 @@ export const DESIGN_TOKENS: Record<string, DesignToken> = {
     accent: '#3B82F6',
     useAiBackground: false,
     fallbackBg: 'linear-gradient(135deg, #F1F5F9 0%, #E0E7FF 50%, #EFF6FF 100%)',
+    backgroundMode: 'none',
   },
   executive: {
     id: 'executive',
@@ -97,6 +105,7 @@ export const DESIGN_TOKENS: Record<string, DesignToken> = {
     accent: '#F59E0B',
     useAiBackground: true,
     fallbackBg: 'linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #0F172A 100%)',
+    backgroundMode: 'cover-only',
   },
   modern: {
     id: 'modern',
@@ -118,6 +127,7 @@ export const DESIGN_TOKENS: Record<string, DesignToken> = {
     accent: '#8B5CF6',
     useAiBackground: true,
     fallbackBg: 'linear-gradient(135deg, #1E1B4B 0%, #312E81 50%, #0F172A 100%)',
+    backgroundMode: 'all',
   },
   minimal: {
     id: 'minimal',
@@ -139,6 +149,7 @@ export const DESIGN_TOKENS: Record<string, DesignToken> = {
     accent: '#0F172A',
     useAiBackground: false,
     fallbackBg: 'linear-gradient(135deg, #FFFFFF 0%, #F8FAFC 100%)',
+    backgroundMode: 'none',
   },
 };
 

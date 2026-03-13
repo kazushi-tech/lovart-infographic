@@ -8,9 +8,10 @@ import RightInspectorPanel from './RightInspectorPanel';
 import ApiKeySettingsModal from './ApiKeySettingsModal';
 import { SlideData, ElementData, ChatMessage, ResearchPacket } from '../demoData';
 import { Loader2 } from 'lucide-react';
-import { generateSlideStructure, generateBackgroundImage } from '../services/geminiService';
+import { generateSlideStructure } from '../services/geminiService';
 import { fetchResearch } from '../services/researchClient';
 import { getDesignToken } from '../designTokens';
+import { enqueue, onProgress as onBgQueueProgress } from '../services/backgroundQueue';
 import { useApiKeys } from '../hooks/useApiKeys';
 import { useDeckHistory } from '../hooks/useDeckHistory';
 import { AppScreen, AnswerEntry } from '../interview/schema';
@@ -247,23 +248,58 @@ export default function AppShell() {
       await saveDeck(generatedRecord);
 
       // Phase 3: Background images (async, non-blocking for editor)
-      if (designToken.useAiBackground && resolvedImageKey) {
+      const designToken = getDesignToken(interviewData.styleId);
+      const backgroundMode = designToken.backgroundMode ?? 'none';
+
+      if (designToken.useAiBackground && resolvedImageKey && backgroundMode !== 'none') {
         const bgStart = Date.now();
-        for (let i = 0; i < newSlides.length; i++) {
-          setGenerationProgress(`背景画像を生成中... (${i + 1}/${newSlides.length})`);
-          const bgPrompt = newSlides[i].bgPrompt || 'abstract professional business background';
-          try {
-            const bgUrl = await generateBackgroundImage(bgPrompt, resolvedImageKey);
-            setSlides(prev => prev.map((s, index) =>
-              index === i ? { ...s, imageUrl: bgUrl } : s
-            ));
-          } catch {
-            console.warn(`Background image generation failed for slide ${i + 1}, using CSS fallback`);
+
+        // Subscribe to background queue progress
+        const unsubscribeProgress = onBgQueueProgress((progress) => {
+          if (progress.total > 0) {
+            setGenerationProgress(`背景画像を生成中... (${progress.completed}/${progress.total})`);
+          }
+        });
+
+        // Determine which slides need backgrounds based on backgroundMode
+        const slidesNeedingBg: SlideData[] = [];
+        for (const slide of newSlides) {
+          if (backgroundMode === 'all') {
+            slidesNeedingBg.push(slide);
+          } else if (backgroundMode === 'cover-only' && slide.pageKind === 'cover') {
+            slidesNeedingBg.push(slide);
+          } else if (backgroundMode === 'cover-only' && !slide.imageUrl && slidesNeedingBg.length === 0) {
+            // Add cover if it's the only one missing
+            slidesNeedingBg.push(slide);
           }
         }
-        timings.backgroundMs = Date.now() - bgStart;
 
-        // Update timing after background completion
+        // Enqueue background generation jobs
+        const bgJobs = slidesNeedingBg.map(slide => ({
+          slideId: slide.id,
+          prompt: slide.bgPrompt || 'abstract professional business background',
+          apiKey: resolvedImageKey,
+        }));
+        enqueue(bgJobs);
+
+        // Update slides as backgrounds complete and save final timing
+        const unsubscribeBgComplete = onBgQueueProgress(async (progress) => {
+          if (progress.total === progress.completed) {
+            const existing = await loadDeck(deckId);
+            if (existing) {
+              const finalRecord: DeckRecord = {
+                ...existing,
+                timings: { ...existing.timings, backgroundMs: Date.now() - bgStart },
+                updatedAt: new Date().toISOString(),
+              };
+              await saveDeck(finalRecord);
+              unsubscribeProgress();
+              unsubscribeBgComplete();
+            }
+          }
+        });
+      } else {
+        // No background generation needed - finalize timing
         timings.totalMs = Date.now() - totalStart;
         const finalRecord: DeckRecord = {
           ...generatedRecord,
