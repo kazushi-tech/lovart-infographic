@@ -1,10 +1,20 @@
 import React from 'react';
-import { InterviewData, StyleOption } from '../demoData';
+import { BriefDraft } from '../interview/schema';
+import { getBriefSummaryItems } from '../interview/brief';
 import { Sparkles, FileText, Target, MessageSquare, Palette, Edit3, CheckCircle2, Loader2 } from 'lucide-react';
 
+const ICON_MAP: Record<string, React.ElementType> = {
+  'テーマ': FileText,
+  'スタイル': Palette,
+  'スライド枚数': FileText,
+  'ターゲット': Target,
+  'キーメッセージ': MessageSquare,
+  'トーン＆マナー': MessageSquare,
+  '補足事項': FileText,
+};
+
 interface BriefSummaryCardProps {
-  interviewData: Partial<InterviewData>;
-  styles: StyleOption[];
+  briefDraft: BriefDraft;
   onGenerate: () => void;
   isGenerated: boolean;
   isGenerateDisabled?: boolean;
@@ -12,13 +22,14 @@ interface BriefSummaryCardProps {
 }
 
 export default function BriefSummaryCard({
-  interviewData,
-  styles,
+  briefDraft,
   onGenerate,
   isGenerated,
   isGenerateDisabled = false,
   isGenerateLoading = false,
 }: BriefSummaryCardProps) {
+  const items = getBriefSummaryItems(briefDraft);
+
   return (
     <div className="p-4 bg-slate-900 border-t border-slate-800 shrink-0 shadow-lg z-10">
       <div className="bg-slate-950 border border-slate-700 rounded-xl overflow-hidden">
@@ -35,17 +46,15 @@ export default function BriefSummaryCard({
 
         {/* Content */}
         <div className="p-4 space-y-3 max-h-48 overflow-y-auto custom-scrollbar">
-          <SummaryItem icon={FileText} label="テーマ" value={interviewData.theme} />
-          <SummaryItem 
-            icon={Palette} 
-            label="スタイル" 
-            value={styles.find(s => s.id === interviewData.styleId)?.label || interviewData.styleId} 
-          />
-          <SummaryItem icon={FileText} label="スライド枚数" value={interviewData.slideCount ? `${interviewData.slideCount}枚` : undefined} />
-          <SummaryItem icon={Target} label="ターゲット" value={interviewData.targetAudience} />
-          <SummaryItem icon={MessageSquare} label="キーメッセージ" value={interviewData.keyMessage} />
-          <SummaryItem icon={MessageSquare} label="トーン＆マナー" value={interviewData.tone} />
-          <SummaryItem icon={FileText} label="補足事項" value={interviewData.supplementary} />
+          {items.map(item => (
+            <div key={item.label} className="space-y-1">
+              <div className="flex items-center gap-1.5 text-slate-400">
+                {React.createElement(ICON_MAP[item.label] || FileText, { className: "w-3 h-3" })}
+                <span className="text-[10px] font-medium uppercase tracking-wider">{item.label}</span>
+              </div>
+              <p className="text-xs text-slate-200 leading-relaxed pl-4.5">{item.value}</p>
+            </div>
+          ))}
         </div>
 
         {/* Action */}
@@ -75,15 +84,3 @@ export default function BriefSummaryCard({
   );
 }
 
-function SummaryItem({ icon: Icon, label, value }: { icon: any, label: string, value?: string }) {
-  if (!value) return null;
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center gap-1.5 text-slate-400">
-        <Icon className="w-3 h-3" />
-        <span className="text-[10px] font-medium uppercase tracking-wider">{label}</span>
-      </div>
-      <p className="text-xs text-slate-200 leading-relaxed pl-4.5">{value}</p>
-    </div>
-  );
-}
