@@ -37,7 +37,7 @@ export default function AssistantShell({
   const { activeStepIndex, answers, phase } = wizardState;
   const briefDraft = buildBriefDraft(answers);
 
-  const isWelcome = phase === 'collecting' && activeStepIndex === 0 && Object.keys(answers).length === 0;
+  const isWelcome = phase === 'idle';
   const isReview = phase === 'review';
   const currentStep = INTERVIEW_STEPS[activeStepIndex];
 

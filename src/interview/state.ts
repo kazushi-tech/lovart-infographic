@@ -19,13 +19,14 @@ export type WizardAction =
   | { type: 'back' }
   | { type: 'goToStep'; index: number }
   | { type: 'loadSample' }
+  | { type: 'startInterview' }
   | { type: 'reset' };
 
 export function createInitialWizardState(): InterviewWizardState {
   return {
     activeStepIndex: 0,
     answers: {},
-    phase: 'collecting',
+    phase: 'idle',
   };
 }
 
@@ -73,6 +74,13 @@ export function interviewWizardReducer(
         activeStepIndex: INTERVIEW_STEPS.length - 1,
         answers: { ...SAMPLE_ANSWERS },
         phase: 'review',
+      };
+    }
+    case 'startInterview': {
+      return {
+        ...state,
+        activeStepIndex: 0,
+        phase: 'collecting',
       };
     }
     case 'reset': {
