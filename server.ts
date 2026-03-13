@@ -26,6 +26,80 @@ app.get("/api/runtime-config", (req, res) => {
   });
 });
 
+// Research endpoint: accepts a theme and returns a ResearchPacket
+// In the current implementation, this uses Gemini to generate grounded research.
+// Future: integrate external search APIs for real-time source retrieval.
+app.post("/api/research", async (req, res) => {
+  try {
+    const { theme, apiKey, preferences } = req.body;
+    if (!theme || !apiKey) {
+      res.status(400).json({ error: 'theme and apiKey are required' });
+      return;
+    }
+
+    // Use Gemini to generate research with grounded sources
+    const { GoogleGenAI } = await import('@google/genai');
+    const ai = new GoogleGenAI({ apiKey });
+
+    const freshnessHint = preferences?.sourcePreference === 'recent-only'
+      ? '2024年以降のデータのみ使用。古い情報は使わない。'
+      : '可能な限り最新のデータを優先。';
+
+    const prompt = `
+あなたはリサーチアナリストです。以下のテーマについて、信頼できる数値データと出典を調査してください。
+
+テーマ: ${theme}
+
+### 出力ルール
+- 実在する公開レポート・統計のみ引用する（捏造厳禁）
+- 各数値主張に出典（レポート名、発行元、公開年）を明記する
+- ${freshnessHint}
+- 出典が見つからない場合は「定性的な傾向として」と明記する
+- JSON形式で返す
+
+### 出力形式
+{
+  "summary": "テーマの概要（2-3文）",
+  "sources": [
+    { "id": "src-1", "title": "レポート名", "url": "URL（不明なら空文字）", "publisher": "発行元", "publishedAt": "2024-01-01", "accessedAt": "${new Date().toISOString().split('T')[0]}" }
+  ],
+  "claims": [
+    { "id": "claim-1", "text": "主張文", "metricValue": "数値", "metricUnit": "単位", "sourceId": "src-1", "publishedAt": "2024-01-01" }
+  ],
+  "warnings": ["注意事項があれば"]
+}
+`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.1-flash',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        temperature: 0.3,
+      },
+    });
+
+    const text = response.text?.trim() || '{}';
+    const packet = JSON.parse(text);
+
+    // Ensure required fields
+    res.json({
+      summary: packet.summary || '',
+      sources: packet.sources || [],
+      claims: packet.claims || [],
+      warnings: packet.warnings || [],
+    });
+  } catch (error: any) {
+    console.error('Research endpoint error:', error.message);
+    res.status(500).json({
+      summary: '',
+      sources: [],
+      claims: [],
+      warnings: [`リサーチ取得に失敗しました: ${error.message}`],
+    });
+  }
+});
+
 async function startServer() {
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {

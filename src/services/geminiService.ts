@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import { InterviewData, SlideData } from '../demoData';
+import { InterviewData, SlideData, ResearchPacket, SourceRef } from '../demoData';
 import { getDesignToken } from '../designTokens';
 import { compileAllSlides } from '../slides/layoutCompiler';
 import { sanitizeAllSlides } from '../slides/sanitize';
@@ -73,14 +73,69 @@ const slideStructureSchema = {
       actionItems: { type: Type.ARRAY, items: { type: Type.STRING }, description: "アクション項目（最大3つ）" },
       takeaways: { type: Type.ARRAY, items: { type: Type.STRING }, description: "要点まとめ（最大3つ）" },
       sourceNote: { type: Type.STRING, description: "出典（例: Source: IDC, Gartner 各社レポート (2025)）" },
+      evidenceRefs: { type: Type.ARRAY, items: { type: Type.STRING }, description: "この slide が参照する EvidenceClaim の id 配列" },
     },
     required: ["id", "pageNumber", "title", "bgPrompt", "pageKind", "eyebrow", "headline"]
   }
 };
 
+/**
+ * Build an evidence context block for the generation prompt.
+ * When a ResearchPacket is available, the AI is constrained to use only these claims.
+ */
+function buildEvidenceContext(packet?: ResearchPacket): string {
+  if (!packet || packet.claims.length === 0) {
+    return `
+### 数値データについて
+- 信頼できる出典が確認できない数値は使用しない
+- 数値を含む場合は sourceNote に出典を明記する
+- 出典が不明な場合は定性的表現（「増加傾向」「大幅に改善」等）を使う
+`;
+  }
+
+  const claimLines = packet.claims.map(c => {
+    const src = packet.sources.find(s => s.id === c.sourceId);
+    const srcLabel = src ? `${src.publisher || src.title} (${src.publishedAt?.slice(0, 4) || '年不明'})` : '出典不明';
+    return `- [${c.id}] ${c.text}${c.metricValue ? ` → ${c.metricValue}${c.metricUnit || ''}` : ''} (${srcLabel})`;
+  }).join('\n');
+
+  const warningLines = packet.warnings.length > 0
+    ? `\n⚠ 注意: ${packet.warnings.join('; ')}`
+    : '';
+
+  return `
+### リサーチ結果（以下のデータのみ使用可能）
+${packet.summary}
+
+#### 利用可能なエビデンス
+${claimLines}
+${warningLines}
+
+### 数値利用ルール
+- KPI / fact / comparison の数値は、上記エビデンス（[claim-N]）からのみ引用する
+- evidenceRefs フィールドに使用した claim の id を記載する
+- エビデンスにない数値を捏造しない
+- 数値の精度を勝手に変えない（例: 50%を47.3%にしない）
+- エビデンスが不足する場合は定性的表現に切り替える
+`;
+}
+
+/**
+ * Build sourceNote string from SourceRef array for display purposes.
+ */
+export function buildSourceNote(sources: SourceRef[]): string {
+  if (sources.length === 0) return '';
+  const labels = sources.map(s => {
+    const year = s.publishedAt?.slice(0, 4) || '';
+    return `${s.publisher || s.title}${year ? ` (${year})` : ''}`;
+  });
+  return `Source: ${labels.join(', ')}`;
+}
+
 export async function generateSlideStructure(
   interviewData: Partial<InterviewData>,
-  apiKey: string
+  apiKey: string,
+  researchPacket?: ResearchPacket,
 ): Promise<SlideData[]> {
   if (!apiKey) {
     throw new Error('API key is required');
@@ -99,6 +154,8 @@ export async function generateSlideStructure(
   } else if (count === 10) {
     structureGuide = '10枚: cover → executive-summary → problem-analysis → deep-dive × 4 → comparison → roadmap → decision-cta';
   }
+
+  const evidenceContext = buildEvidenceContext(researchPacket);
 
   const prompt = `
 あなたはプロのインフォグラフィックデザイナーです。以下の要件に基づいて、${count}枚のスライドの**意味的構造**を作成してください。
@@ -128,7 +185,7 @@ eyebrow, headline, facts, kpis, sections などの意味的フィールドだけ
 
 ### 枚数に応じたページ種別の構成
 ${structureGuide}
-
+${evidenceContext}
 ### コンテンツルール
 - 各スライドの主張は**1つ**に絞る
 - KPIは最大2件（数値+単位を明確に分離）
@@ -157,14 +214,34 @@ ${structureGuide}
     const jsonStr = response.text?.trim() || "[]";
     const rawSlides: SlideData[] = JSON.parse(jsonStr);
 
-    // Initialize imageUrl, then compile semantic data → positioned elements
-    const slidesWithEmptyImages = rawSlides.map(slide => ({
-      ...slide,
-      imageUrl: '',
-      elements: [], // will be replaced by compiler
-    }));
+    // Attach research sources to slides that reference evidence
+    const slidesWithSources = rawSlides.map(slide => {
+      const slideWithDefaults = {
+        ...slide,
+        imageUrl: '',
+        elements: [],
+      };
 
-    return sanitizeAllSlides(compileAllSlides(slidesWithEmptyImages, token));
+      // If we have a research packet, attach relevant sources
+      if (researchPacket && slide.evidenceRefs && slide.evidenceRefs.length > 0) {
+        const referencedSourceIds = new Set<string>();
+        for (const claimId of slide.evidenceRefs) {
+          const claim = researchPacket.claims.find(c => c.id === claimId);
+          if (claim) referencedSourceIds.add(claim.sourceId);
+        }
+        const slideSources = researchPacket.sources.filter(s => referencedSourceIds.has(s.id));
+        slideWithDefaults.sources = slideSources;
+
+        // Build sourceNote from actual sources if not already set
+        if (!slideWithDefaults.sourceNote && slideSources.length > 0) {
+          slideWithDefaults.sourceNote = buildSourceNote(slideSources);
+        }
+      }
+
+      return slideWithDefaults;
+    });
+
+    return sanitizeAllSlides(compileAllSlides(slidesWithSources, token));
   } catch (error) {
     console.error("Error generating slide structure:", error);
     throw error;
@@ -196,7 +273,7 @@ export async function generateBackgroundImage(prompt: string, apiKey: string): P
         return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
       }
     }
-    
+
     throw new Error("No image data found in response");
   } catch (error) {
     console.error("Error generating background image:", error);

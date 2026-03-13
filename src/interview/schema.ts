@@ -27,6 +27,9 @@ export interface BriefDraft {
   keyMessage?: string;
   tone?: string;
   supplementary?: string;
+  // Evidence preferences (M0)
+  evidenceMode?: 'auto' | 'manual' | 'none';
+  sourcePreference?: 'recent-only' | 'allow-older' | 'any';
 }
 
 export interface StepOption {

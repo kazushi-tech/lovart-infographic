@@ -9,6 +9,40 @@ export type ElementType =
   | 'roadmap-step'
   | 'chip';
 
+// --- Evidence & Source types ---
+
+export interface SourceRef {
+  id: string;
+  title: string;
+  url: string;
+  publisher?: string;
+  publishedAt?: string; // ISO date
+  accessedAt: string;   // ISO date
+}
+
+export interface EvidenceClaim {
+  id: string;
+  text: string;
+  metricValue?: string;
+  metricUnit?: string;
+  sourceId: string;
+  publishedAt?: string;
+}
+
+export interface ResearchPacket {
+  summary: string;
+  sources: SourceRef[];
+  claims: EvidenceClaim[];
+  warnings: string[];
+}
+
+export type EvidenceWarning = {
+  type: 'stale-source' | 'no-source' | 'unverified-metric' | 'missing-url';
+  message: string;
+  slideId?: string;
+  claimId?: string;
+};
+
 export interface ElementData {
   id: string;
   type: ElementType;
@@ -48,6 +82,11 @@ export interface SlideData {
   actionItems?: string[];
   takeaways?: string[];
   sourceNote?: string;
+
+  // Evidence tracking
+  sources?: SourceRef[];
+  evidenceRefs?: string[]; // EvidenceClaim IDs used in this slide
+  warnings?: EvidenceWarning[];
 }
 
 export interface StyleOption {

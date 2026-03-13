@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useReducer, useMemo } from 'react';
+import React, { useState, useEffect, useReducer, useMemo, useCallback, useRef } from 'react';
 import AppHeader from './AppHeader';
 import AssistantShell from './assistant/AssistantShell';
 import ChatInterviewSidebar from './ChatInterviewSidebar';
@@ -6,12 +6,15 @@ import CenterPreviewWorkspace from './CenterPreviewWorkspace';
 import SlideThumbnailRail from './SlideThumbnailRail';
 import RightInspectorPanel from './RightInspectorPanel';
 import ApiKeySettingsModal from './ApiKeySettingsModal';
-import { SlideData, ElementData, ChatMessage } from '../demoData';
+import { SlideData, ElementData, ChatMessage, ResearchPacket } from '../demoData';
 import { Loader2 } from 'lucide-react';
 import { generateSlideStructure, generateBackgroundImage } from '../services/geminiService';
+import { fetchResearch } from '../services/researchClient';
 import { getDesignToken } from '../designTokens';
 import { useApiKeys } from '../hooks/useApiKeys';
+import { useDeckHistory } from '../hooks/useDeckHistory';
 import { AppScreen, AnswerEntry } from '../interview/schema';
+import type { DeckRecord, GenerationTiming } from '../history/schema';
 import {
   interviewWizardReducer,
   createInitialWizardState,
@@ -29,9 +32,13 @@ export default function AppShell() {
     isRuntimeConfigLoading,
   } = useApiKeys();
 
+  const { decks, saveDeck, loadDeck, removeDeck, refresh: refreshHistory } = useDeckHistory();
+
   // --- State model ---
   const [screen, setScreen] = useState<AppScreen>('wizard');
   const [wizardState, dispatch] = useReducer(interviewWizardReducer, undefined, createInitialWizardState);
+  const [currentDeckId, setCurrentDeckId] = useState<string | null>(null);
+  const [researchPacket, setResearchPacket] = useState<ResearchPacket | undefined>();
 
   const briefDraft = useMemo(() => buildBriefDraft(wizardState.answers), [wizardState.answers]);
 
@@ -62,6 +69,9 @@ export default function AppShell() {
   const [isDraggingLeft, setIsDraggingLeft] = useState(false);
   const [isDraggingRight, setIsDraggingRight] = useState(false);
 
+  // Debounced auto-save for element edits
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (isDraggingLeft) {
@@ -83,6 +93,35 @@ export default function AppShell() {
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [isDraggingLeft, isDraggingRight]);
+
+  // --- Auto-save on slide edits (debounced 500ms) ---
+  const debouncedSave = useCallback((slidesData: SlideData[], messagesData: ChatMessage[]) => {
+    if (!currentDeckId) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(async () => {
+      try {
+        const existing = await loadDeck(currentDeckId);
+        if (existing) {
+          const updated: DeckRecord = {
+            ...existing,
+            slides: slidesData,
+            messages: messagesData,
+            updatedAt: new Date().toISOString(),
+          };
+          await saveDeck(updated);
+        }
+      } catch (e) {
+        console.warn('Auto-save failed:', e);
+      }
+    }, 500);
+  }, [currentDeckId, loadDeck, saveDeck]);
+
+  // Trigger auto-save when slides change (only in editor mode)
+  useEffect(() => {
+    if (screen === 'editor' && currentDeckId && slides.length > 0) {
+      debouncedSave(slides, messages);
+    }
+  }, [slides, messages, screen, currentDeckId, debouncedSave]);
 
   // --- Wizard handlers ---
   const handleAnswerCommit = (entry: AnswerEntry) => {
@@ -140,24 +179,76 @@ export default function AppShell() {
 
     setScreen('generating');
     setIsGenerating(true);
-    setGenerationProgress('スライド構成を生成中...');
+
+    const timings: GenerationTiming = { structureMs: 0, totalMs: 0 };
+    const totalStart = Date.now();
+    const deckId = `deck-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setCurrentDeckId(deckId);
+
+    // Create draft record
+    const draftRecord: DeckRecord = {
+      id: deckId,
+      briefDraft,
+      slides: [],
+      messages: [],
+      timings,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: 'draft',
+    };
+    await saveDeck(draftRecord);
 
     try {
-      const newSlides = await generateSlideStructure(interviewData, resolvedGeminiKey);
+      // Phase 1: Research (optional)
+      let packet: ResearchPacket | undefined;
+      if (briefDraft.evidenceMode !== 'none') {
+        setGenerationProgress('テーマをリサーチ中...');
+        const researchStart = Date.now();
+        try {
+          packet = await fetchResearch(interviewData.theme, resolvedGeminiKey, {
+            sourcePreference: briefDraft.sourcePreference,
+          });
+          setResearchPacket(packet);
+        } catch {
+          console.warn('Research fetch failed, proceeding without evidence');
+        }
+        timings.researchMs = Date.now() - researchStart;
+      }
+
+      // Phase 2: Structure generation
+      setGenerationProgress('スライド構成を生成中...');
+      const structureStart = Date.now();
+      const newSlides = await generateSlideStructure(interviewData, resolvedGeminiKey, packet);
+      timings.structureMs = Date.now() - structureStart;
+
       setSlides(newSlides);
       setActiveSlideId(newSlides[0].id);
       setScreen('editor');
 
       // Initialize editor messages
-      setMessages([{
+      const initMessages: ChatMessage[] = [{
         id: `msg-${Date.now()}`,
         role: 'assistant',
         text: 'スライドの生成が完了しました。中央のプレビューエリアで確認・編集が可能です。',
         timestamp: Date.now(),
-      }]);
+      }];
+      setMessages(initMessages);
 
-      // Only generate AI background images for styles that use them
+      // Save generated deck record
+      const generatedRecord: DeckRecord = {
+        ...draftRecord,
+        slides: newSlides,
+        messages: initMessages,
+        researchPacket: packet,
+        timings: { ...timings, totalMs: Date.now() - totalStart },
+        updatedAt: new Date().toISOString(),
+        status: 'generated',
+      };
+      await saveDeck(generatedRecord);
+
+      // Phase 3: Background images (async, non-blocking for editor)
       if (designToken.useAiBackground && resolvedImageKey) {
+        const bgStart = Date.now();
         for (let i = 0; i < newSlides.length; i++) {
           setGenerationProgress(`背景画像を生成中... (${i + 1}/${newSlides.length})`);
           const bgPrompt = newSlides[i].bgPrompt || 'abstract professional business background';
@@ -167,20 +258,56 @@ export default function AppShell() {
               index === i ? { ...s, imageUrl: bgUrl } : s
             ));
           } catch {
-            // Fallback: CSS background is already in place via designToken.fallbackBg
             console.warn(`Background image generation failed for slide ${i + 1}, using CSS fallback`);
           }
         }
+        timings.backgroundMs = Date.now() - bgStart;
+
+        // Update timing after background completion
+        timings.totalMs = Date.now() - totalStart;
+        const finalRecord: DeckRecord = {
+          ...generatedRecord,
+          timings: { ...timings },
+          updatedAt: new Date().toISOString(),
+        };
+        await saveDeck(finalRecord);
       }
+
       setGenerationProgress('');
     } catch (error: any) {
       console.error(error);
+      // Save failed record
+      const failedRecord: DeckRecord = {
+        ...draftRecord,
+        timings: { ...timings, totalMs: Date.now() - totalStart },
+        updatedAt: new Date().toISOString(),
+        status: 'failed',
+      };
+      await saveDeck(failedRecord);
       alert('設定した API キーを確認してください。');
       setScreen('review');
     } finally {
       setIsGenerating(false);
     }
   };
+
+  // --- History: Load a deck from history ---
+  const handleLoadDeck = useCallback(async (id: string) => {
+    const record = await loadDeck(id);
+    if (!record) return;
+
+    setCurrentDeckId(record.id);
+    setSlides(record.slides);
+    setMessages(record.messages);
+    setResearchPacket(record.researchPacket);
+    setActiveSlideId(record.slides[0]?.id ?? null);
+    setSelectedElementId(null);
+    setScreen('editor');
+  }, [loadDeck]);
+
+  const handleDeleteDeck = useCallback(async (id: string) => {
+    await removeDeck(id);
+  }, [removeDeck]);
 
   const activeSlideIndex = slides.findIndex((s) => s.id === activeSlideId);
   const activeSlide = activeSlideIndex !== -1 ? slides[activeSlideIndex] : null;
@@ -216,6 +343,8 @@ export default function AppShell() {
   };
 
   const handleNew = () => {
+    setCurrentDeckId(null);
+    setResearchPacket(undefined);
     dispatch({ type: 'reset' });
     setScreen('wizard');
     setSlides([]);
@@ -230,7 +359,14 @@ export default function AppShell() {
     <div className="h-screen w-full flex flex-col bg-slate-950 text-slate-200 overflow-hidden font-sans selection:bg-blue-500/30 relative">
 
       {/* App Header */}
-      <AppHeader onNew={handleNew} onOpenSettings={() => setIsSettingsOpen(true)} isGenerated={isGenerated} />
+      <AppHeader
+        onNew={handleNew}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        isGenerated={isGenerated}
+        deckHistory={decks}
+        onLoadDeck={handleLoadDeck}
+        onDeleteDeck={handleDeleteDeck}
+      />
 
       <div className="flex-1 flex min-h-0 relative">
         {!isGenerated ? (
