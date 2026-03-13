@@ -11,6 +11,22 @@ export type InterviewFieldId =
   | 'tone'
   | 'supplementary';
 
+// M3: Adaptive field identifiers for which we can generate theme-aware options
+export type AdaptiveFieldId = 'targetAudience' | 'keyMessage' | 'tone' | 'supplementary';
+
+export interface AdaptiveOptionsResult {
+  fieldId: AdaptiveFieldId;
+  options: StepOption[];
+  isCached: boolean;
+  generatedAt: number;
+}
+
+export interface AdaptiveBriefContext {
+  theme: string;
+  styleId?: string;
+  slideCount?: string;
+}
+
 export interface AnswerEntry {
   fieldId: InterviewFieldId;
   value: string;
