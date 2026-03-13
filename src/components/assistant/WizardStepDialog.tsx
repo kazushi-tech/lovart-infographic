@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { ChevronLeft } from 'lucide-react';
 import type { InterviewStep, StepOption, AnswerEntry } from '../../interview/schema';
 import ChoiceOptionCard from './ChoiceOptionCard';
 
@@ -21,10 +22,23 @@ export default function WizardStepDialog({
   const [textValue, setTextValue] = useState('');
   const [customText, setCustomText] = useState('');
 
+  // Double-commit guard: prevent rapid clicks from advancing 2 steps
+  const commitLockRef = useRef(false);
+
   const isCustomMode = pendingChoice?.mode === 'custom';
+  const isChoiceStep = step.inputType === 'single-choice' || step.inputType === 'grid-choice';
+
+  // Determine if footer should show primary action button
+  // - text steps: always show
+  // - custom input active: show send button
+  // - preset choice (required): hidden (auto-advance handles it)
+  // - preset choice (optional, no selection): show skip button instead
+  const showPrimaryButton = !isChoiceStep || isCustomMode;
+  const showSkipButton = isChoiceStep && !isCustomMode && !step.required;
 
   // Restore existing answer when navigating back
   useEffect(() => {
+    commitLockRef.current = false;
     if (existingAnswer) {
       if (step.inputType === 'text') {
         setTextValue(existingAnswer.value);
@@ -33,7 +47,6 @@ export default function WizardStepDialog({
         if (opt) {
           setPendingChoice(opt);
         } else if (existingAnswer.source === 'text') {
-          // Was a custom "other" entry
           const otherOpt = step.options?.find(o => o.mode === 'custom');
           if (otherOpt) {
             setPendingChoice(otherOpt);
@@ -48,10 +61,16 @@ export default function WizardStepDialog({
     }
   }, [step.fieldId, existingAnswer]);
 
-  const handleCommit = () => {
+  const doCommit = useCallback((entry: AnswerEntry) => {
+    if (commitLockRef.current) return;
+    commitLockRef.current = true;
+    onCommit(entry);
+  }, [onCommit]);
+
+  const handleCommit = useCallback(() => {
     if (step.inputType === 'text') {
       if (!textValue.trim()) return;
-      onCommit({
+      doCommit({
         fieldId: step.fieldId,
         value: textValue.trim(),
         label: textValue.trim(),
@@ -60,14 +79,14 @@ export default function WizardStepDialog({
     } else if (pendingChoice) {
       if (isCustomMode) {
         if (!customText.trim()) return;
-        onCommit({
+        doCommit({
           fieldId: step.fieldId,
           value: customText.trim(),
           label: customText.trim(),
           source: 'text',
         });
       } else {
-        onCommit({
+        doCommit({
           fieldId: step.fieldId,
           value: pendingChoice.id,
           label: pendingChoice.label,
@@ -75,23 +94,61 @@ export default function WizardStepDialog({
         });
       }
     }
-  };
+  }, [step.fieldId, step.inputType, textValue, pendingChoice, isCustomMode, customText, doCommit]);
+
+  // Handle preset choice selection: auto-commit immediately
+  const handleChoiceSelect = useCallback((opt: StepOption) => {
+    setPendingChoice(opt);
+    if (opt.mode !== 'custom') {
+      setCustomText('');
+      // Auto-commit preset choices immediately
+      if (commitLockRef.current) return;
+      commitLockRef.current = true;
+      onCommit({
+        fieldId: step.fieldId,
+        value: opt.id,
+        label: opt.label,
+        source: 'choice',
+      });
+    }
+  }, [step.fieldId, onCommit]);
+
+  // Handle skip for optional steps
+  const handleSkip = useCallback(() => {
+    doCommit({
+      fieldId: step.fieldId,
+      value: '',
+      label: '（スキップ）',
+      source: 'text',
+    });
+  }, [step.fieldId, doCommit]);
 
   const canCommit = step.inputType === 'text'
     ? textValue.trim().length > 0
     : pendingChoice !== null && (!isCustomMode || customText.trim().length > 0);
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Question */}
-      <div className="px-6 pt-6 pb-3">
-        <h2 className="text-lg font-semibold text-slate-100 leading-relaxed">
-          {step.question}
-        </h2>
+    <div className="flex flex-col h-full min-h-0">
+      {/* Question header with back button */}
+      <div className="px-6 pt-5 pb-3 shrink-0">
+        <div className="flex items-start gap-2">
+          {!isFirst && (
+            <button
+              onClick={onBack}
+              className="mt-0.5 p-1 rounded-md text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition-colors shrink-0"
+              aria-label="戻る"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+          )}
+          <h2 className="text-lg font-semibold text-slate-100 leading-relaxed">
+            {step.question}
+          </h2>
+        </div>
       </div>
 
       {/* Answer area */}
-      <div className="flex-1 overflow-y-auto px-6 pb-4 custom-scrollbar">
+      <div className="flex-1 overflow-y-auto px-6 pb-4 custom-scrollbar min-h-0">
         {step.inputType === 'text' ? (
           <div className="mt-2">
             <textarea
@@ -114,7 +171,8 @@ export default function WizardStepDialog({
                 <ChoiceOptionCard
                   option={opt}
                   isSelected={pendingChoice?.id === opt.id}
-                  onSelect={o => { setPendingChoice(o); setCustomText(''); }}
+                  onSelect={handleChoiceSelect}
+                  disabled={commitLockRef.current}
                   variant="grid"
                 />
               </React.Fragment>
@@ -127,7 +185,8 @@ export default function WizardStepDialog({
                 <ChoiceOptionCard
                   option={opt}
                   isSelected={pendingChoice?.id === opt.id}
-                  onSelect={o => { setPendingChoice(o); if (o.mode !== 'custom') setCustomText(''); }}
+                  onSelect={handleChoiceSelect}
+                  disabled={commitLockRef.current}
                   variant="list"
                 />
               </React.Fragment>
@@ -155,28 +214,32 @@ export default function WizardStepDialog({
         )}
       </div>
 
-      {/* Footer: Back + Next */}
-      <div className="px-6 py-4 border-t border-slate-800 flex items-center gap-3">
-        {!isFirst && (
-          <button
-            onClick={onBack}
-            className="px-4 py-2.5 text-sm font-medium text-slate-400 hover:text-slate-200 transition-colors"
-          >
-            戻る
-          </button>
-        )}
-        <button
-          onClick={handleCommit}
-          disabled={!canCommit}
-          className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all ${
-            canCommit
-              ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-500/20'
-              : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-          }`}
-        >
-          {step.required ? '次へ' : 'スキップまたは次へ'}
-        </button>
-      </div>
+      {/* Footer: conditionally shown */}
+      {(showPrimaryButton || showSkipButton) && (
+        <div className="px-6 py-4 border-t border-slate-800 flex items-center gap-3 shrink-0">
+          {showPrimaryButton && (
+            <button
+              onClick={handleCommit}
+              disabled={!canCommit}
+              className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                canCommit
+                  ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-500/20'
+                  : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+              }`}
+            >
+              次へ
+            </button>
+          )}
+          {showSkipButton && (
+            <button
+              onClick={handleSkip}
+              className="flex-1 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200 bg-slate-800/50 hover:bg-slate-800 transition-all"
+            >
+              スキップ
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -42,7 +42,7 @@ export default function AssistantShell({
   const currentStep = INTERVIEW_STEPS[activeStepIndex];
 
   return (
-    <div className="w-full max-w-4xl h-[85vh] flex flex-col bg-slate-900 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden">
+    <div className="w-full max-w-4xl h-full max-h-full flex flex-col bg-slate-900 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden min-h-0">
       {/* Shell header */}
       <div className="shrink-0 h-12 flex items-center px-4 bg-slate-950 border-b border-slate-800">
         <h2 className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">

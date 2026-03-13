@@ -234,7 +234,7 @@ export default function AppShell() {
 
       <div className="flex-1 flex min-h-0 relative">
         {!isGenerated ? (
-          <div className="flex-1 flex flex-col items-center justify-center bg-slate-950 p-6">
+          <div className="flex-1 flex flex-col items-center justify-center bg-slate-950 p-6 min-h-0">
             <AssistantShell
               wizardState={wizardState}
               onAnswerCommit={handleAnswerCommit}

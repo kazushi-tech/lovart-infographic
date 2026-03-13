@@ -31,7 +31,7 @@ export default function WizardReviewView({
   const items = getBriefSummaryItems(briefDraft);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0">
       <div className="flex-1 overflow-y-auto px-6 py-6 custom-scrollbar">
         {/* Assistant message */}
         <div className="mb-5 p-4 bg-slate-800/40 rounded-xl border border-slate-700/50">

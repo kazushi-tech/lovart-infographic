@@ -5,6 +5,7 @@ interface ChoiceOptionCardProps {
   option: StepOption;
   isSelected: boolean;
   onSelect: (option: StepOption) => void;
+  disabled?: boolean;
   variant?: 'list' | 'grid';
 }
 
@@ -12,13 +13,21 @@ export default function ChoiceOptionCard({
   option,
   isSelected,
   onSelect,
+  disabled = false,
   variant = 'list',
 }: ChoiceOptionCardProps) {
+  const handleClick = () => {
+    if (disabled) return;
+    onSelect(option);
+  };
+
   if (variant === 'grid') {
     return (
       <button
-        onClick={() => onSelect(option)}
+        onClick={handleClick}
+        disabled={disabled}
         className={`text-left rounded-xl border overflow-hidden transition-all ${
+          disabled ? 'opacity-60 cursor-not-allowed' :
           isSelected
             ? 'border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/30'
             : 'border-slate-700 bg-slate-950 hover:border-slate-600 hover:bg-slate-900'
@@ -43,8 +52,10 @@ export default function ChoiceOptionCard({
 
   return (
     <button
-      onClick={() => onSelect(option)}
+      onClick={handleClick}
+      disabled={disabled}
       className={`w-full text-left px-4 py-3 rounded-xl border transition-all flex items-center gap-3 ${
+        disabled ? 'opacity-60 cursor-not-allowed' :
         isSelected
           ? 'border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/30'
           : 'border-slate-700 bg-slate-950 hover:border-slate-600 hover:bg-slate-900'
