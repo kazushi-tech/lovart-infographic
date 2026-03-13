@@ -62,6 +62,7 @@ export const DESIGN_TOKENS: Record<string, DesignToken> = {
     useAiBackground: false,
     fallbackBg: 'linear-gradient(135deg, #F8FAFC 0%, #E2E8F0 50%, #DBEAFE 100%)',
     backgroundMode: 'none',
+    layoutVariant: 'standard',
   },
   professional: {
     id: 'professional',
@@ -84,6 +85,7 @@ export const DESIGN_TOKENS: Record<string, DesignToken> = {
     useAiBackground: false,
     fallbackBg: 'linear-gradient(135deg, #F1F5F9 0%, #E0E7FF 50%, #EFF6FF 100%)',
     backgroundMode: 'none',
+    layoutVariant: 'standard',
   },
   executive: {
     id: 'executive',
@@ -106,6 +108,7 @@ export const DESIGN_TOKENS: Record<string, DesignToken> = {
     useAiBackground: true,
     fallbackBg: 'linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #0F172A 100%)',
     backgroundMode: 'cover-only',
+    layoutVariant: 'asymmetric',
   },
   modern: {
     id: 'modern',
@@ -128,6 +131,7 @@ export const DESIGN_TOKENS: Record<string, DesignToken> = {
     useAiBackground: true,
     fallbackBg: 'linear-gradient(135deg, #1E1B4B 0%, #312E81 50%, #0F172A 100%)',
     backgroundMode: 'all',
+    layoutVariant: 'centered',
   },
   minimal: {
     id: 'minimal',
@@ -150,6 +154,7 @@ export const DESIGN_TOKENS: Record<string, DesignToken> = {
     useAiBackground: false,
     fallbackBg: 'linear-gradient(135deg, #FFFFFF 0%, #F8FAFC 100%)',
     backgroundMode: 'none',
+    layoutVariant: 'centered',
   },
 };
 

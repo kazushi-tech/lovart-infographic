@@ -54,6 +54,8 @@ export interface StepOption {
   desc?: string;
   imageUrl?: string;
   mode?: 'preset' | 'custom'; // 'custom' enables free-text input (e.g. "その他")
+  // M4: Hint for prompt generation when this option is selected
+  promptHint?: string;
 }
 
 export type StepInputType = 'text' | 'single-choice' | 'grid-choice';
