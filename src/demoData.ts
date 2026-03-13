@@ -1,6 +1,17 @@
+export type ElementType =
+  | 'text'
+  | 'kpi'
+  | 'card'
+  | 'badge'
+  | 'divider'
+  | 'bullet-list'
+  | 'comparison-row'
+  | 'roadmap-step'
+  | 'chip';
+
 export interface ElementData {
   id: string;
-  type: 'text' | 'kpi' | 'card';
+  type: ElementType;
   content: string;
   x: number;
   y: number;
@@ -9,6 +20,10 @@ export interface ElementData {
   color?: string;
   fontWeight?: string;
   textAlign?: 'left' | 'center' | 'right';
+  variant?: string;
+  background?: string;
+  borderColor?: string;
+  icon?: string;
 }
 
 export type PageKind = 'cover' | 'executive-summary' | 'problem-analysis' | 'comparison' | 'roadmap' | 'deep-dive' | 'decision-cta';
@@ -81,7 +96,11 @@ export const MOCK_INTERVIEW_DATA: InterviewData = {
   supplementary: '経営会議向けに、青を基調とした落ち着いたトーンで作成してください。',
 };
 
-export const MOCK_SLIDES: SlideData[] = [
+import { compileAllSlides } from './slides/layoutCompiler';
+import { DESIGN_TOKENS } from './designTokens';
+
+/** Semantic mock slides — elements are compiled at import time via layoutCompiler */
+const MOCK_SLIDES_SEMANTIC: Omit<SlideData, 'elements'>[] = [
   {
     id: 'slide-1',
     pageNumber: 1,
@@ -92,12 +111,6 @@ export const MOCK_SLIDES: SlideData[] = [
     headline: '戦略的リモートワーク',
     subheadline: 'リモートワークの生産性を最大化する',
     kpis: [{ label: '生産性向上率', value: '20', unit: '%' }],
-    elements: [
-      { id: 'el-1-1', type: 'text', content: '01 / 導入', x: 8, y: 15, fontSize: 14, color: '#2563EB', fontWeight: '600' },
-      { id: 'el-1-2', type: 'text', content: '戦略的リモートワーク', x: 8, y: 25, fontSize: 42, color: '#0F172A', fontWeight: '700', width: 80 },
-      { id: 'el-1-3', type: 'text', content: 'リモートワークの生産性を最大化する', x: 8, y: 45, fontSize: 18, color: '#475569', fontWeight: '400' },
-      { id: 'el-1-4', type: 'kpi', content: '生産性向上率\n20%', x: 8, y: 65, fontSize: 24, color: '#1E40AF', fontWeight: '700' }
-    ]
   },
   {
     id: 'slide-2',
@@ -108,11 +121,6 @@ export const MOCK_SLIDES: SlideData[] = [
     eyebrow: '02 / 課題分析',
     headline: '現状の課題',
     facts: ['コミュニケーションの分断', '情報共有の遅延', '帰属意識の低下'],
-    elements: [
-      { id: 'el-2-1', type: 'text', content: '02 / 課題分析', x: 8, y: 15, fontSize: 14, color: '#2563EB', fontWeight: '600' },
-      { id: 'el-2-2', type: 'text', content: '現状の課題', x: 8, y: 25, fontSize: 36, color: '#0F172A', fontWeight: '700' },
-      { id: 'el-2-3', type: 'card', content: '課題1: コミュニケーションの分断\n課題2: 情報共有の遅延\n課題3: 帰属意識の低下', x: 8, y: 45, fontSize: 16, color: '#1E293B', width: 40 }
-    ]
   },
   {
     id: 'slide-3',
@@ -123,13 +131,13 @@ export const MOCK_SLIDES: SlideData[] = [
     eyebrow: '03 / 解決策',
     headline: '次世代プラットフォームの導入',
     facts: ['統合型ワークスペースの構築'],
-    elements: [
-      { id: 'el-3-1', type: 'text', content: '03 / 解決策', x: 8, y: 15, fontSize: 14, color: '#2563EB', fontWeight: '600' },
-      { id: 'el-3-2', type: 'text', content: '次世代プラットフォームの導入', x: 8, y: 25, fontSize: 36, color: '#0F172A', fontWeight: '700' },
-      { id: 'el-3-3', type: 'text', content: '統合型ワークスペースの構築', x: 8, y: 45, fontSize: 18, color: '#475569', fontWeight: '400' }
-    ]
-  }
+  },
 ];
+
+export const MOCK_SLIDES: SlideData[] = compileAllSlides(
+  MOCK_SLIDES_SEMANTIC.map(s => ({ ...s, elements: [] })),
+  DESIGN_TOKENS.professional,
+);
 
 // --- Demo State Presets ---
 export type AppState = 'empty' | 'midInterview' | 'styleSelection' | 'briefComplete' | 'generatedSlides' | 'selectedElement';

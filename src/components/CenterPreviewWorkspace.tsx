@@ -86,7 +86,13 @@ export default function CenterPreviewWorkspace({
           className="relative w-full max-w-5xl aspect-video bg-slate-900 shadow-2xl ring-1 ring-slate-800 overflow-hidden"
           onClick={(e) => e.stopPropagation()} // Prevent deselection when clicking canvas background
         >
-          {/* Background Image */}
+          {/* Fallback CSS background (always present) */}
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{ background: designToken.fallbackBg }}
+          />
+
+          {/* Background Image (layered on top of fallback) */}
           {activeSlide.imageUrl && (
             <img
               src={activeSlide.imageUrl}
@@ -207,10 +213,19 @@ function RenderElement({
     ? 'ring-2 ring-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/20 z-10' 
     : 'hover:ring-1 hover:ring-dashed hover:ring-slate-400 hover:bg-white/5 z-0';
 
-  if (element.type === 'card') {
+  // --- Badge (eyebrow) ---
+  if (element.type === 'badge') {
     return (
-      <div 
-        style={{ ...style, backgroundColor: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.1)' }}
+      <div
+        style={{
+          ...style,
+          backgroundColor: element.background || 'rgba(37, 99, 235, 0.1)',
+          border: `1px solid ${element.borderColor || 'rgba(37, 99, 235, 0.25)'}`,
+          borderRadius: '6px',
+          padding: '4px 12px',
+          display: 'inline-block',
+          letterSpacing: '0.05em',
+        }}
         className={interactionClasses}
         onMouseDown={handleMouseDown}
       >
@@ -219,25 +234,153 @@ function RenderElement({
     );
   }
 
+  // --- KPI ---
   if (element.type === 'kpi') {
+    const lines = element.content.split('\n');
+    const label = lines[0] || '';
+    const value = lines[1] || '';
     return (
-      <div 
-        style={style}
+      <div
+        style={{ ...style, padding: '12px 16px' }}
         className={interactionClasses}
         onMouseDown={handleMouseDown}
       >
-        <div className="text-blue-400 font-bold text-5xl leading-none mb-2">
-          {element.content.split('\n')[1]}
+        <div style={{ fontSize: `${(element.fontSize || 48)}px`, color: element.color, fontWeight: '700', lineHeight: 1.1 }}>
+          {value}
         </div>
-        <div className="text-sm text-slate-300 uppercase tracking-wider">
-          {element.content.split('\n')[0]}
+        <div style={{ fontSize: '13px', color: element.color, opacity: 0.7, marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          {label}
         </div>
       </div>
     );
   }
 
+  // --- Card (section with title + bullets) ---
+  if (element.type === 'card') {
+    return (
+      <div
+        style={{
+          ...style,
+          backgroundColor: 'rgba(15, 23, 42, 0.5)',
+          backdropFilter: 'blur(8px)',
+          border: '1px solid rgba(255,255,255,0.08)',
+          borderRadius: '8px',
+          padding: '14px 16px',
+        }}
+        className={interactionClasses}
+        onMouseDown={handleMouseDown}
+      >
+        {element.content.split('\n').map((line, i) => (
+          <div key={i} style={{
+            fontWeight: i === 0 ? '600' : '400',
+            fontSize: i === 0 ? `${(element.fontSize || 15) + 2}px` : `${element.fontSize || 15}px`,
+            marginTop: i === 0 ? 0 : '4px',
+            opacity: i === 0 ? 1 : 0.85,
+          }}>
+            {line}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // --- Bullet list ---
+  if (element.type === 'bullet-list') {
+    return (
+      <div
+        style={{ ...style, display: 'flex', alignItems: 'flex-start', gap: '8px' }}
+        className={interactionClasses}
+        onMouseDown={handleMouseDown}
+      >
+        <span style={{ color: element.color, opacity: 0.5, fontSize: '20px', lineHeight: 1 }}>•</span>
+        <span>{element.content}</span>
+      </div>
+    );
+  }
+
+  // --- Comparison row ---
+  if (element.type === 'comparison-row') {
+    const cells = element.content.split('\t');
+    const isHeader = element.variant === 'header';
+    return (
+      <div
+        style={{
+          ...style,
+          display: 'grid',
+          gridTemplateColumns: '1.2fr 1fr 1fr',
+          gap: '12px',
+          backgroundColor: element.background || (isHeader ? 'rgba(15, 23, 42, 0.4)' : 'rgba(15, 23, 42, 0.25)'),
+          borderRadius: '6px',
+          padding: '10px 16px',
+          borderBottom: `1px solid ${element.borderColor || 'rgba(255,255,255,0.06)'}`,
+        }}
+        className={interactionClasses}
+        onMouseDown={handleMouseDown}
+      >
+        {cells.map((cell, i) => (
+          <div key={i} style={{
+            fontWeight: isHeader || i === 0 ? '600' : '400',
+            textAlign: i === 0 ? 'left' : 'center',
+          }}>
+            {cell}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // --- Roadmap step ---
+  if (element.type === 'roadmap-step') {
+    const lines = element.content.split('\n');
+    const title = lines[0] || '';
+    const bullets = lines.slice(1);
+    return (
+      <div
+        style={{
+          ...style,
+          backgroundColor: element.background || 'rgba(15, 23, 42, 0.4)',
+          borderRadius: '10px',
+          padding: '16px',
+          borderTop: `3px solid ${element.borderColor || '#3B82F6'}`,
+        }}
+        className={interactionClasses}
+        onMouseDown={handleMouseDown}
+      >
+        <div style={{ fontWeight: '700', fontSize: `${(element.fontSize || 13) + 2}px`, marginBottom: '8px' }}>
+          {title}
+        </div>
+        {bullets.map((b, i) => (
+          <div key={i} style={{ fontSize: `${element.fontSize || 13}px`, opacity: 0.85, marginTop: '3px' }}>
+            {b}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // --- Chip ---
+  if (element.type === 'chip') {
+    return (
+      <div
+        style={{
+          ...style,
+          backgroundColor: element.background || 'rgba(37, 99, 235, 0.12)',
+          border: `1px solid ${element.borderColor || 'rgba(37, 99, 235, 0.3)'}`,
+          borderRadius: '8px',
+          padding: '12px 16px',
+          textAlign: 'center',
+        }}
+        className={interactionClasses}
+        onMouseDown={handleMouseDown}
+      >
+        {element.content}
+      </div>
+    );
+  }
+
+  // --- Default text ---
   return (
-    <div 
+    <div
       style={style}
       className={interactionClasses}
       onMouseDown={handleMouseDown}

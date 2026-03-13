@@ -102,10 +102,7 @@ export default function AppShell() {
   };
 
   const handleStartInterview = () => {
-    // Ensure wizard is in collecting phase at step 0
-    if (wizardState.phase !== 'collecting' || wizardState.activeStepIndex !== 0) {
-      dispatch({ type: 'reset' });
-    }
+    dispatch({ type: 'startInterview' });
     setScreen('wizard');
   };
   const handleSample = () => {
@@ -159,13 +156,21 @@ export default function AppShell() {
         timestamp: Date.now(),
       }]);
 
-      for (let i = 0; i < newSlides.length; i++) {
-        setGenerationProgress(`背景画像を生成中... (${i + 1}/${newSlides.length})`);
-        const bgPrompt = newSlides[i].bgPrompt || 'abstract professional business background';
-        const bgUrl = await generateBackgroundImage(bgPrompt, resolvedImageKey);
-        setSlides(prev => prev.map((s, index) =>
-          index === i ? { ...s, imageUrl: bgUrl } : s
-        ));
+      // Only generate AI background images for styles that use them
+      if (designToken.useAiBackground && resolvedImageKey) {
+        for (let i = 0; i < newSlides.length; i++) {
+          setGenerationProgress(`背景画像を生成中... (${i + 1}/${newSlides.length})`);
+          const bgPrompt = newSlides[i].bgPrompt || 'abstract professional business background';
+          try {
+            const bgUrl = await generateBackgroundImage(bgPrompt, resolvedImageKey);
+            setSlides(prev => prev.map((s, index) =>
+              index === i ? { ...s, imageUrl: bgUrl } : s
+            ));
+          } catch {
+            // Fallback: CSS background is already in place via designToken.fallbackBg
+            console.warn(`Background image generation failed for slide ${i + 1}, using CSS fallback`);
+          }
+        }
       }
       setGenerationProgress('');
     } catch (error: any) {

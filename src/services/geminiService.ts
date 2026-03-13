@@ -1,90 +1,80 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import { InterviewData, SlideData, ElementData } from '../demoData';
+import { InterviewData, SlideData } from '../demoData';
 import { getDesignToken } from '../designTokens';
+import { compileAllSlides } from '../slides/layoutCompiler';
+import { sanitizeAllSlides } from '../slides/sanitize';
 
+/**
+ * Semantic-first schema: AI returns meaning, not coordinates.
+ * The layout compiler handles positioning.
+ */
 const slideStructureSchema = {
   type: Type.ARRAY,
-  description: "An array of infographic slides.",
+  description: "An array of infographic slides with semantic content. Do NOT include visual coordinates — only meaning.",
   items: {
     type: Type.OBJECT,
     properties: {
       id: { type: Type.STRING, description: "A unique identifier for the slide (e.g., 'slide-1')" },
-      pageNumber: { type: Type.INTEGER, description: "The page number (1 to 5)" },
+      pageNumber: { type: Type.INTEGER, description: "The page number" },
       title: { type: Type.STRING, description: "The title of the slide" },
       bgPrompt: { type: Type.STRING, description: "A detailed prompt for an AI image generator to create a background image for this slide. The image should be abstract, professional, and match the theme. DO NOT include text in the image prompt. Must be in English." },
       pageKind: { type: Type.STRING, description: "cover | executive-summary | problem-analysis | comparison | roadmap | deep-dive | decision-cta" },
       eyebrow: { type: Type.STRING, description: "セクションラベル（例: 01 / AI戦略ブリーフィング）" },
       headline: { type: Type.STRING, description: "大見出し（10〜20文字）" },
       subheadline: { type: Type.STRING, description: "補足説明文（12〜24文字、表紙のみ）" },
-      facts: { type: Type.ARRAY, items: { type: Type.STRING }, description: "要点（60文字以内）" },
-      kpis: { 
-        type: Type.ARRAY, 
-        items: { 
-          type: Type.OBJECT, 
-          properties: { 
-            label: { type: Type.STRING }, 
-            value: { type: Type.STRING }, 
-            unit: { type: Type.STRING } 
-          } 
-        } 
+      facts: { type: Type.ARRAY, items: { type: Type.STRING }, description: "要点（各60文字以内、最大3つ）" },
+      kpis: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            label: { type: Type.STRING },
+            value: { type: Type.STRING },
+            unit: { type: Type.STRING }
+          }
+        },
+        description: "KPI（最大2つ）"
       },
       sections: {
         type: Type.ARRAY,
         items: {
           type: Type.OBJECT,
-          properties: { 
-            title: { type: Type.STRING }, 
-            bullets: { type: Type.ARRAY, items: { type: Type.STRING } } 
+          properties: {
+            title: { type: Type.STRING },
+            bullets: { type: Type.ARRAY, items: { type: Type.STRING } }
           }
-        }
+        },
+        description: "セクション（最大2つ、各3弾丸まで）"
       },
       comparisonRows: {
         type: Type.ARRAY,
         items: {
           type: Type.OBJECT,
-          properties: { 
-            topic: { type: Type.STRING }, 
-            current: { type: Type.STRING }, 
-            future: { type: Type.STRING } 
+          properties: {
+            topic: { type: Type.STRING },
+            current: { type: Type.STRING },
+            future: { type: Type.STRING }
           }
-        }
+        },
+        description: "比較行（3行固定）"
       },
       roadmapPhases: {
         type: Type.ARRAY,
         items: {
           type: Type.OBJECT,
-          properties: { 
-            phase: { type: Type.INTEGER }, 
-            title: { type: Type.STRING }, 
-            bullets: { type: Type.ARRAY, items: { type: Type.STRING } } 
-          }
-        }
-      },
-      actionItems: { type: Type.ARRAY, items: { type: Type.STRING } },
-      takeaways: { type: Type.ARRAY, items: { type: Type.STRING } },
-      sourceNote: { type: Type.STRING, description: "Source: IDC, Gartner 各社レポート (2025)" },
-      elements: {
-        type: Type.ARRAY,
-        description: "Visual elements to be placed on the slide. You MUST map all the semantic fields above (eyebrow, headline, facts, kpis, etc.) into these visual elements with appropriate X/Y coordinates, font sizes, and colors. The elements array is what actually gets rendered on the screen.",
-        items: {
-          type: Type.OBJECT,
           properties: {
-            id: { type: Type.STRING, description: "A unique identifier for the element" },
-            type: { type: Type.STRING, description: "The type of element: 'text', 'kpi', or 'card'" },
-            content: { type: Type.STRING, description: "The text content in Japanese. For KPI, put label on first line and value+unit on second line." },
-            x: { type: Type.INTEGER, description: "X coordinate percentage (0-100)" },
-            y: { type: Type.INTEGER, description: "Y coordinate percentage (0-100)" },
-            fontSize: { type: Type.INTEGER, description: "Font size in pixels (e.g., 16, 24, 48)" },
-            color: { type: Type.STRING, description: "Hex color code (e.g., '#FFFFFF' or '#333333')" },
-            fontWeight: { type: Type.STRING, description: "Font weight (e.g., 'normal', 'bold')" },
-            textAlign: { type: Type.STRING, description: "Text alignment ('left', 'center', 'right')" },
-            width: { type: Type.INTEGER, description: "Optional width percentage (0-100)" }
-          },
-          required: ["id", "type", "content", "x", "y", "fontSize", "color"]
-        }
-      }
+            phase: { type: Type.INTEGER },
+            title: { type: Type.STRING },
+            bullets: { type: Type.ARRAY, items: { type: Type.STRING } }
+          }
+        },
+        description: "ロードマップフェーズ（3つ固定）"
+      },
+      actionItems: { type: Type.ARRAY, items: { type: Type.STRING }, description: "アクション項目（最大3つ）" },
+      takeaways: { type: Type.ARRAY, items: { type: Type.STRING }, description: "要点まとめ（最大3つ）" },
+      sourceNote: { type: Type.STRING, description: "出典（例: Source: IDC, Gartner 各社レポート (2025)）" },
     },
-    required: ["id", "pageNumber", "title", "bgPrompt", "pageKind", "eyebrow", "headline", "elements"]
+    required: ["id", "pageNumber", "title", "bgPrompt", "pageKind", "eyebrow", "headline"]
   }
 };
 
@@ -111,57 +101,47 @@ export async function generateSlideStructure(
   }
 
   const prompt = `
-    あなたはプロのインフォグラフィックデザイナーです。以下の要件に基づいて、${count}枚のスライド構成を作成してください。
-    
-    テーマ: ${interviewData.theme || "未指定"}
-    ターゲット読者: ${interviewData.targetAudience || "未指定"}
-    キーメッセージ: ${interviewData.keyMessage || "未指定"}
-    スタイル: ${interviewData.styleId || "未指定"}
-    スライド枚数: ${count}枚
-    トーン＆マナー: ${interviewData.tone || "未指定"}
-    補足事項: ${interviewData.supplementary || "なし"}
+あなたはプロのインフォグラフィックデザイナーです。以下の要件に基づいて、${count}枚のスライドの**意味的構造**を作成してください。
 
-    スライドの情報量をビジネス用ホワイトペーパーレベルに引き上げてください。
-    各スライドは以下のフィールドを持つJSONオブジェクトとして管理してください。
+テーマ: ${interviewData.theme || "未指定"}
+ターゲット読者: ${interviewData.targetAudience || "未指定"}
+キーメッセージ: ${interviewData.keyMessage || "未指定"}
+スタイル: ${interviewData.styleId || "未指定"}
+スライド枚数: ${count}枚
+トーン＆マナー: ${interviewData.tone || "未指定"}
+補足事項: ${interviewData.supplementary || "なし"}
 
-    ### ページ種別ごとの必須要素
-    | ページ種別 | eyebrow | headline | sub | facts | kpis | 特殊要素 |
-    |-----------|---------|----------|-----|-------|------|---------|
-    | cover（表紙） | ○ | ○ | ○ | - | 1個 | - |
-    | executive-summary | ○ | ○ | - | 1-2個 | 1-2個 | - |
-    | problem-analysis | ○ | ○ | - | 1-2個 | 1-2個 | sections |
-    | comparison | ○ | ○ | - | - | - | comparisonRows（3行） |
-    | roadmap | ○ | ○ | - | - | - | roadmapPhases（3つ） |
-    | deep-dive | ○ | ○ | - | 1-2個 | 1-2個 | sections |
-    | decision-cta | ○ | ○ | - | - | - | actionItems（3つ）+ takeaways |
+### 重要: セマンティック出力のみ
+座標やフォントサイズは出力しないでください。アプリ側でレイアウトを自動計算します。
+eyebrow, headline, facts, kpis, sections などの意味的フィールドだけを返してください。
 
-    ### 枚数に応じたページ種別の構成
-    ${structureGuide}
+### ページ種別ごとの必須要素と制約
+| ページ種別 | eyebrow | headline | sub | facts | kpis | 特殊要素 |
+|-----------|---------|----------|-----|-------|------|---------|
+| cover（表紙） | ○ | ○ | ○ | - | 1個 | - |
+| executive-summary | ○ | ○ | - | 1-2 | 1-2 | - |
+| problem-analysis | ○ | ○ | - | 1 | 1-2 | sections（2つ、各3弾丸まで） |
+| comparison | ○ | ○ | - | - | - | comparisonRows（3行固定） |
+| roadmap | ○ | ○ | - | - | - | roadmapPhases（3つ固定） |
+| deep-dive | ○ | ○ | - | 1 | 1-2 | sections（2つ、各3弾丸まで） |
+| decision-cta | ○ | ○ | - | - | - | actionItems（3つ）+ takeaways（2-3） |
 
-    ### 全スライド共通ルール
-    - **eyebrow**は必ず「NN / セクション名」形式で付ける
-    - **sourceNote**はデータを引用するスライドに必ず付ける
-    - テキストは全て読みやすいサイズ（最小16px）
-    - 視覚的階層: headline(大) > subheadline(中) > facts/bullets(小) > sourceNote(極小)
-    - QAで収集した情報は必ずどこかのスライドに反映する
+### 枚数に応じたページ種別の構成
+${structureGuide}
 
-    重要: JSONの \`elements\` 配列には、上記で生成したセマンティックな情報（eyebrow, headline, facts, kpisなど）を視覚的な要素として配置してください。
-    テキスト要素は、X/Y座標(%)を使ってバランスよく配置してください。
-
-    ### テキストカラー指定（必ずこの色を使うこと）
-    選択されたスタイル「${token.label}」に基づき、以下の色をそのまま使ってください:
-    - eyebrow テキスト: ${token.colors.eyebrow}
-    - headline テキスト: ${token.colors.headline}
-    - subheadline テキスト: ${token.colors.subheadline}
-    - 本文・ファクト・箇条書き: ${token.colors.body}
-    - KPI 値: ${token.colors.kpiValue}
-    - KPI ラベル: ${token.colors.kpiLabel}
-    - ソース注記: ${token.colors.sourceNote}
-
-    背景画像の上にはオーバーレイが適用されるため、上記の色で十分なコントラストが確保されます。
-    絶対に #94A3B8 や #CBD5E1 などの中間グレーを使わないでください。
-    出力は日本語のテキスト要素を含みますが、bgPromptは必ず英語にしてください。
+### コンテンツルール
+- 各スライドの主張は**1つ**に絞る
+- KPIは最大2件（数値+単位を明確に分離）
+- factsは2-3件まで（各60文字以内）
+- comparison は3行固定（topic / current / future）
+- roadmap は3フェーズ固定
+- eyebrowは必ず「NN / セクション名」形式
+- sourceNoteはデータを引用するスライドに必ず付ける
+- QAで収集した情報は必ずどこかのスライドに反映する
+- bgPromptは必ず英語にする
+- 全テキストは日本語
   `;
+
 
   try {
     const response = await ai.models.generateContent({
@@ -175,13 +155,16 @@ export async function generateSlideStructure(
     });
 
     const jsonStr = response.text?.trim() || "[]";
-    const slides: SlideData[] = JSON.parse(jsonStr);
-    
-    // Initialize imageUrl to empty string, it will be filled later
-    return slides.map(slide => ({
+    const rawSlides: SlideData[] = JSON.parse(jsonStr);
+
+    // Initialize imageUrl, then compile semantic data → positioned elements
+    const slidesWithEmptyImages = rawSlides.map(slide => ({
       ...slide,
-      imageUrl: ''
+      imageUrl: '',
+      elements: [], // will be replaced by compiler
     }));
+
+    return sanitizeAllSlides(compileAllSlides(slidesWithEmptyImages, token));
   } catch (error) {
     console.error("Error generating slide structure:", error);
     throw error;
