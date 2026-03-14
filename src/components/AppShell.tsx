@@ -14,7 +14,11 @@ import { getDesignToken } from '../designTokens';
 import { enqueue, onProgress as onBgQueueProgress } from '../services/backgroundQueue';
 import { useApiKeys } from '../hooks/useApiKeys';
 import { useDeckHistory } from '../hooks/useDeckHistory';
-import { AppScreen, AnswerEntry } from '../interview/schema';
+import { AppScreen, AnswerEntry, InterviewFieldId } from '../interview/schema';
+import type { FollowUpAnswerEntry } from '../interview/state';
+import { assessAnswerQuality } from '../interview/answerQuality';
+import { generateFollowUpQuestions } from '../services/adaptiveInterviewService';
+import { validateAllSlides, groupWarningsBySlide, type ValidationResult } from '../services/contentValidator';
 import type { DeckRecord, GenerationTiming } from '../history/schema';
 import {
   interviewWizardReducer,
@@ -64,6 +68,8 @@ export default function AppShell() {
   const [slides, setSlides] = useState<SlideData[]>([]);
   const [activeSlideId, setActiveSlideId] = useState<string | null>(null);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
+  const [zoom, setZoom] = useState(100);
 
   const [leftWidth, setLeftWidth] = useState(320);
   const [rightWidth, setRightWidth] = useState(288);
@@ -127,6 +133,33 @@ export default function AppShell() {
   // --- Wizard handlers ---
   const handleAnswerCommit = (entry: AnswerEntry) => {
     dispatch({ type: 'answer', fieldId: entry.fieldId, entry });
+
+    // After answering targetAudience or keyMessage, check if follow-up is needed
+    const followUpFields: InterviewFieldId[] = ['targetAudience', 'keyMessage'];
+    if (followUpFields.includes(entry.fieldId)) {
+      const updatedAnswers = { ...wizardState.answers, [entry.fieldId]: entry };
+      const quality = assessAnswerQuality(updatedAnswers);
+      const fieldFlags: Record<string, import('../interview/answerQuality').QualitySeverity | null> = {};
+      for (const flag of quality.flags) {
+        if (flag.fieldId === entry.fieldId) {
+          fieldFlags[flag.fieldId] = flag.severity;
+        }
+      }
+      const theme = updatedAnswers.theme?.value || updatedAnswers.theme?.label || '';
+      const packets = generateFollowUpQuestions(theme, fieldFlags);
+      if (packets.length > 0) {
+        // Show the first relevant follow-up
+        dispatch({ type: 'showFollowUp', packet: packets[0] });
+      }
+    }
+  };
+
+  const handleFollowUpCommit = (answer: FollowUpAnswerEntry) => {
+    dispatch({ type: 'answerFollowUp', answer });
+  };
+
+  const handleFollowUpSkip = () => {
+    dispatch({ type: 'skipFollowUp' });
   };
 
   const handleWizardBack = () => {
@@ -219,11 +252,18 @@ export default function AppShell() {
       // Phase 2: Structure generation
       setGenerationProgress('スライド構成を生成中...');
       const structureStart = Date.now();
-      const newSlides = await generateSlideStructure(interviewData, resolvedGeminiKey, packet);
+      const newSlides = await generateSlideStructure(
+        interviewData,
+        resolvedGeminiKey,
+        packet,
+        wizardState.answers,
+        wizardState.followUpAnswers,
+      );
       timings.structureMs = Date.now() - structureStart;
 
       setSlides(newSlides);
       setActiveSlideId(newSlides[0].id);
+      setValidationResult(validateAllSlides(newSlides));
       setScreen('editor');
 
       // Initialize editor messages
@@ -387,6 +427,8 @@ export default function AppShell() {
     setActiveSlideId(null);
     setSelectedElementId(null);
     setMessages([]);
+    setValidationResult(null);
+    setZoom(100);
   };
 
   const isGenerated = screen === 'editor';
@@ -410,6 +452,8 @@ export default function AppShell() {
             <AssistantShell
               wizardState={wizardState}
               onAnswerCommit={handleAnswerCommit}
+              onFollowUpCommit={handleFollowUpCommit}
+              onFollowUpSkip={handleFollowUpSkip}
               onBack={handleWizardBack}
               onGoToStep={handleWizardGoToStep}
               onStartInterview={handleStartInterview}
@@ -445,7 +489,7 @@ export default function AppShell() {
 
             {/* Drag Handle Left */}
             <div
-              className="w-1 cursor-col-resize bg-slate-800 hover:bg-blue-500 z-30 transition-colors"
+              className="w-1.5 cursor-col-resize bg-slate-800 hover:bg-blue-500 hover:w-2 z-30 transition-all"
               onMouseDown={() => setIsDraggingLeft(true)}
             />
 
@@ -460,6 +504,9 @@ export default function AppShell() {
                 onNext={handleNextSlide}
                 onPrev={handlePrevSlide}
                 designToken={designToken}
+                zoom={zoom}
+                onZoomIn={() => setZoom(z => Math.min(z + 25, 200))}
+                onZoomOut={() => setZoom(z => Math.max(z - 25, 50))}
               />
 
               {/* Bottom Rail: Thumbnails */}
@@ -477,7 +524,7 @@ export default function AppShell() {
 
             {/* Drag Handle Right */}
             <div
-              className="w-1 cursor-col-resize bg-slate-800 hover:bg-blue-500 z-30 transition-colors"
+              className="w-1.5 cursor-col-resize bg-slate-800 hover:bg-blue-500 hover:w-2 z-30 transition-all"
               onMouseDown={() => setIsDraggingRight(true)}
             />
 
@@ -488,6 +535,11 @@ export default function AppShell() {
                 selectedElement={selectedElement}
                 onUpdateElement={handleUpdateElement}
                 onSelectElement={setSelectedElementId}
+                slideWarnings={
+                  activeSlide && validationResult
+                    ? (groupWarningsBySlide(validationResult.warnings).get(activeSlide.id) || [])
+                    : []
+                }
               />
             </div>
           </>

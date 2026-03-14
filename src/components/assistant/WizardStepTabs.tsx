@@ -15,6 +15,7 @@ interface WizardStepTabsProps {
   answers: Partial<Record<string, AnswerEntry>>;
   onGoToStep: (index: number) => void;
   isReview?: boolean;
+  isFollowUp?: boolean;
 }
 
 export default function WizardStepTabs({
@@ -22,6 +23,7 @@ export default function WizardStepTabs({
   answers,
   onGoToStep,
   isReview = false,
+  isFollowUp = false,
 }: WizardStepTabsProps) {
   return (
     <div className="px-4 py-3 bg-slate-900/80 border-b border-slate-800">
@@ -66,6 +68,8 @@ export default function WizardStepTabs({
         <span className="text-[10px] font-medium text-slate-500 tracking-wider">
           {isReview
             ? 'ヒアリング完了'
+            : isFollowUp
+            ? '確認質問'
             : `ステップ ${activeStepIndex + 1} / ${INTERVIEW_STEPS.length}`}
         </span>
       </div>

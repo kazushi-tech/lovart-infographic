@@ -31,7 +31,11 @@ export interface AnswerEntry {
   fieldId: InterviewFieldId;
   value: string;
   label: string;
-  source: 'choice' | 'text' | 'sample';
+  source: 'choice' | 'text' | 'sample' | 'follow-up';
+  /** Quality confidence: 0-1, set after quality assessment */
+  confidence?: number;
+  /** Whether this answer needs follow-up clarification */
+  needsFollowUp?: boolean;
 }
 
 export interface BriefDraft {
@@ -56,6 +60,16 @@ export interface StepOption {
   mode?: 'preset' | 'custom'; // 'custom' enables free-text input (e.g. "その他")
   // M4: Hint for prompt generation when this option is selected
   promptHint?: string;
+}
+
+// M2: Adaptive question packet for follow-up questions
+export interface AdaptiveQuestionPacket {
+  id: string;
+  parentFieldId: InterviewFieldId;
+  question: string;
+  reason: string;
+  options: StepOption[];
+  fallbackPrompt: string;
 }
 
 export type StepInputType = 'text' | 'single-choice' | 'grid-choice';

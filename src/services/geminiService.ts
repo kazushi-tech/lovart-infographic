@@ -3,6 +3,9 @@ import { InterviewData, SlideData, ResearchPacket, SourceRef } from '../demoData
 import { getDesignToken } from '../designTokens';
 import { compileAllSlides } from '../slides/layoutCompiler';
 import { sanitizeAllSlides } from '../slides/sanitize';
+import { buildRichBrief, formatRichBriefNarrative, type RichBriefContext } from '../interview/brief';
+import { buildStructureGuide, buildQualityConstraints, buildAntiPatternWarnings, buildPageRequirementsTable } from './promptTemplates';
+import type { AnswerEntry, InterviewFieldId } from '../interview/schema';
 
 /**
  * Semantic-first schema: AI returns meaning, not coordinates.
@@ -136,6 +139,8 @@ export async function generateSlideStructure(
   interviewData: Partial<InterviewData>,
   apiKey: string,
   researchPacket?: ResearchPacket,
+  answers?: Partial<Record<InterviewFieldId, AnswerEntry>>,
+  followUpAnswers?: Array<{ parentFieldId: string; label: string; promptHint?: string }>,
 ): Promise<SlideData[]> {
   if (!apiKey) {
     throw new Error('API key is required');
@@ -144,59 +149,55 @@ export async function generateSlideStructure(
 
   const count = parseInt(interviewData.slideCount || '5', 10);
   const token = getDesignToken(interviewData.styleId);
-  let structureGuide = '';
-  if (count === 3) {
-    structureGuide = '3枚: cover → problem-analysis → decision-cta';
-  } else if (count === 5) {
-    structureGuide = '5枚: cover → executive-summary → problem-analysis → comparison → decision-cta';
-  } else if (count === 8) {
-    structureGuide = '8枚: cover → executive-summary → problem-analysis → deep-dive × 2 → comparison → roadmap → decision-cta';
-  } else if (count === 10) {
-    structureGuide = '10枚: cover → executive-summary → problem-analysis → deep-dive × 4 → comparison → roadmap → decision-cta';
+
+  // Build rich brief from answers if available, else fall back to interviewData
+  let briefNarrative: string;
+  if (answers && Object.keys(answers).length > 0) {
+    const richBrief = buildRichBrief(
+      answers as Record<string, AnswerEntry>,
+      researchPacket,
+      followUpAnswers
+    );
+    briefNarrative = formatRichBriefNarrative(richBrief);
+  } else {
+    briefNarrative = `
+## プロジェクト概要
+- **テーマ**: ${interviewData.theme || "未指定"}
+- **ターゲット読者**: ${interviewData.targetAudience || "未指定"}
+- **キーメッセージ**: ${interviewData.keyMessage || "未指定"}
+- **トーン**: ${interviewData.tone || "未指定"}
+- **スライド枚数**: ${count}枚
+- **デザインスタイル**: ${interviewData.styleId || "未指定"}
+- **補足事項**: ${interviewData.supplementary || "なし"}
+`;
   }
 
+  const structureGuide = buildStructureGuide(count);
   const evidenceContext = buildEvidenceContext(researchPacket);
+  const qualityConstraints = buildQualityConstraints();
+  const antiPatterns = buildAntiPatternWarnings();
+  const pageReqs = buildPageRequirementsTable();
 
   const prompt = `
 あなたはプロのインフォグラフィックデザイナーです。以下の要件に基づいて、${count}枚のスライドの**意味的構造**を作成してください。
 
-テーマ: ${interviewData.theme || "未指定"}
-ターゲット読者: ${interviewData.targetAudience || "未指定"}
-キーメッセージ: ${interviewData.keyMessage || "未指定"}
-スタイル: ${interviewData.styleId || "未指定"}
-スライド枚数: ${count}枚
-トーン＆マナー: ${interviewData.tone || "未指定"}
-補足事項: ${interviewData.supplementary || "なし"}
+${briefNarrative}
 
 ### 重要: セマンティック出力のみ
 座標やフォントサイズは出力しないでください。アプリ側でレイアウトを自動計算します。
 eyebrow, headline, facts, kpis, sections などの意味的フィールドだけを返してください。
 
-### ページ種別ごとの必須要素と制約
-| ページ種別 | eyebrow | headline | sub | facts | kpis | 特殊要素 |
-|-----------|---------|----------|-----|-------|------|---------|
-| cover（表紙） | ○ | ○ | ○ | - | 1個 | - |
-| executive-summary | ○ | ○ | - | 1-2 | 1-2 | - |
-| problem-analysis | ○ | ○ | - | 1 | 1-2 | sections（2つ、各3弾丸まで） |
-| comparison | ○ | ○ | - | - | - | comparisonRows（3行固定） |
-| roadmap | ○ | ○ | - | - | - | roadmapPhases（3つ固定） |
-| deep-dive | ○ | ○ | - | 1 | 1-2 | sections（2つ、各3弾丸まで） |
-| decision-cta | ○ | ○ | - | - | - | actionItems（3つ）+ takeaways（2-3） |
+${pageReqs}
 
 ### 枚数に応じたページ種別の構成
 ${structureGuide}
 ${evidenceContext}
-### コンテンツルール
-- 各スライドの主張は**1つ**に絞る
-- KPIは最大2件（数値+単位を明確に分離）
-- factsは2-3件まで（各60文字以内）
-- comparison は3行固定（topic / current / future）
-- roadmap は3フェーズ固定
-- eyebrowは必ず「NN / セクション名」形式
+${qualityConstraints}
+${antiPatterns}
+### 追加コンテンツルール
 - sourceNoteはデータを引用するスライドに必ず付ける
 - QAで収集した情報は必ずどこかのスライドに反映する
 - bgPromptは必ず英語にする
-- 全テキストは日本語
   `;
 
 

@@ -13,6 +13,13 @@ interface CenterPreviewWorkspaceProps {
   onNext: () => void;
   onPrev: () => void;
   designToken?: DesignToken;
+  zoom?: number;
+  onZoomIn?: () => void;
+  onZoomOut?: () => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
 }
 
 export default function CenterPreviewWorkspace({
@@ -24,13 +31,20 @@ export default function CenterPreviewWorkspace({
   onNext,
   onPrev,
   designToken = DEFAULT_TOKEN,
+  zoom = 100,
+  onZoomIn,
+  onZoomOut,
+  onUndo,
+  onRedo,
+  canUndo = false,
+  canRedo = false,
 }: CenterPreviewWorkspaceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   if (!activeSlide) {
     return (
       <div className="flex-1 flex flex-col bg-slate-950 text-slate-500 relative">
-        <TopCanvasToolbar />
+        <TopCanvasToolbar zoom={zoom} />
         <div className="flex-1 flex flex-col items-center justify-center">
           <div className="w-16 h-16 rounded-2xl bg-slate-900/50 flex items-center justify-center mb-4 border border-slate-800/50">
             <Maximize2 className="w-6 h-6 text-slate-600" />
@@ -44,7 +58,15 @@ export default function CenterPreviewWorkspace({
 
   return (
     <div className="flex-1 flex flex-col bg-slate-950 relative overflow-hidden">
-      <TopCanvasToolbar />
+      <TopCanvasToolbar
+        zoom={zoom}
+        onZoomIn={onZoomIn}
+        onZoomOut={onZoomOut}
+        onUndo={onUndo}
+        onRedo={onRedo}
+        canUndo={canUndo}
+        canRedo={canRedo}
+      />
 
       {/* Header Info */}
       <header className="absolute top-14 left-0 right-0 h-12 flex items-center justify-between px-6 z-10 pointer-events-none">
@@ -77,13 +99,14 @@ export default function CenterPreviewWorkspace({
 
       {/* Main Canvas Area */}
       <main 
-        className="flex-1 relative flex items-center justify-center p-8 overflow-auto bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px]"
+        className="flex-1 relative flex items-center justify-center p-8 overflow-auto bg-slate-950"
         onClick={() => onSelectElement(null)} // Click outside to deselect
       >
         {/* Aspect Ratio Container (16:9) */}
         <div 
           ref={containerRef}
-          className="relative w-full max-w-5xl aspect-video bg-slate-900 shadow-2xl ring-1 ring-slate-800 overflow-hidden"
+          style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'center center' }}
+          className="relative w-full max-w-5xl aspect-video bg-slate-900 shadow-2xl ring-1 ring-slate-800 overflow-hidden transition-transform duration-150"
           onClick={(e) => e.stopPropagation()} // Prevent deselection when clicking canvas background
         >
           {/* Fallback CSS background (always present) */}
@@ -97,7 +120,7 @@ export default function CenterPreviewWorkspace({
             <img
               src={activeSlide.imageUrl}
               alt={activeSlide.title}
-              className="absolute inset-0 w-full h-full object-cover opacity-90 mix-blend-luminosity pointer-events-none"
+              className="absolute inset-0 w-full h-full object-cover pointer-events-none"
               referrerPolicy="no-referrer"
             />
           )}

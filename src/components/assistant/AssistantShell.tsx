@@ -1,17 +1,20 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Bot } from 'lucide-react';
 import { INTERVIEW_STEPS, AnswerEntry, StepOption, AdaptiveFieldId } from '../../interview/schema';
-import type { BriefDraft } from '../../interview/schema';
-import type { InterviewWizardState } from '../../interview/state';
-import { buildBriefDraft } from '../../interview/state';
+import type { InterviewFieldId } from '../../interview/schema';
+import type { InterviewWizardState, FollowUpAnswerEntry } from '../../interview/state';
+import { buildBriefDraft, buildBriefQuality } from '../../interview/state';
 import WizardWelcomeView from './WizardWelcomeView';
 import WizardStepTabs from './WizardStepTabs';
 import WizardStepDialog from './WizardStepDialog';
+import WizardFollowUpDialog from './WizardFollowUpDialog';
 import WizardReviewView from './WizardReviewView';
 
 interface AssistantShellProps {
   wizardState: InterviewWizardState;
   onAnswerCommit: (entry: AnswerEntry) => void;
+  onFollowUpCommit: (answer: FollowUpAnswerEntry) => void;
+  onFollowUpSkip: () => void;
   onBack: () => void;
   onGoToStep: (index: number) => void;
   onStartInterview: () => void;
@@ -28,6 +31,8 @@ interface AssistantShellProps {
 export default function AssistantShell({
   wizardState,
   onAnswerCommit,
+  onFollowUpCommit,
+  onFollowUpSkip,
   onBack,
   onGoToStep,
   onStartInterview,
@@ -40,12 +45,20 @@ export default function AssistantShell({
   adaptiveOptions = { targetAudience: [], keyMessage: [], tone: [], supplementary: [] },
   isAdaptiveLoading = () => false,
 }: AssistantShellProps) {
-  const { activeStepIndex, answers, phase } = wizardState;
+  const { activeStepIndex, answers, phase, currentFollowUp } = wizardState;
   const briefDraft = buildBriefDraft(answers);
+  const quality = useMemo(() => buildBriefQuality(answers), [answers]);
 
   const isWelcome = phase === 'idle';
   const isReview = phase === 'review';
+  const isFollowUp = phase === 'follow-up' && currentFollowUp !== null;
   const currentStep = INTERVIEW_STEPS[activeStepIndex];
+
+  // Navigate to the step that owns a given field
+  const handleGoToField = (fieldId: InterviewFieldId) => {
+    const idx = INTERVIEW_STEPS.findIndex(s => s.fieldId === fieldId);
+    if (idx >= 0) onGoToStep(idx);
+  };
 
   return (
     <div className="w-full max-w-4xl h-full max-h-full flex flex-col bg-slate-900 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden min-h-0">
@@ -64,6 +77,7 @@ export default function AssistantShell({
           answers={answers}
           onGoToStep={onGoToStep}
           isReview={isReview}
+          isFollowUp={isFollowUp}
         />
       )}
 
@@ -73,10 +87,20 @@ export default function AssistantShell({
       ) : isReview ? (
         <WizardReviewView
           briefDraft={briefDraft}
+          quality={quality}
+          followUpAnswers={wizardState.followUpAnswers}
           onGenerate={onGenerate}
           onBack={onBack}
+          onGoToField={handleGoToField}
           isGenerateDisabled={isGenerateDisabled}
           isGenerateLoading={isGenerateLoading}
+        />
+      ) : isFollowUp && currentFollowUp ? (
+        <WizardFollowUpDialog
+          packet={currentFollowUp}
+          onCommit={onFollowUpCommit}
+          onSkip={onFollowUpSkip}
+          onBack={onBack}
         />
       ) : currentStep ? (
         <WizardStepDialog

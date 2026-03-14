@@ -1,5 +1,6 @@
-import { generateSlideStructure } from './geminiService';
-import type { AdaptiveBriefContext, AdaptiveFieldId, AdaptiveOptionsResult, StepOption } from '../interview/schema';
+import type { AdaptiveBriefContext, AdaptiveFieldId, AdaptiveOptionsResult, AdaptiveQuestionPacket, StepOption, InterviewFieldId, AnswerEntry } from '../interview/schema';
+import { classifyTheme, getFollowUpForField, type FollowUpStep } from '../interview/followUpTemplates';
+import type { QualitySeverity } from '../interview/answerQuality';
 
 /**
  * Cache for adaptive options results.
@@ -204,4 +205,46 @@ export async function prefetchAllAdaptiveOptions(
  */
 export function clearAdaptiveCache(): void {
   adaptiveCache.clear();
+}
+
+/**
+ * Convert a FollowUpStep to an AdaptiveQuestionPacket for UI consumption.
+ */
+function toQuestionPacket(followUp: FollowUpStep): AdaptiveQuestionPacket {
+  return {
+    id: followUp.id,
+    parentFieldId: followUp.parentFieldId,
+    question: followUp.question,
+    reason: followUp.reason,
+    options: followUp.options.map(o => ({
+      id: o.id,
+      label: o.label,
+      promptHint: o.promptHint,
+    })),
+    fallbackPrompt: followUp.fallbackPrompt,
+  };
+}
+
+/**
+ * Generate follow-up question packets based on theme and quality flags.
+ * Returns packets for fields that have quality issues and need clarification.
+ */
+export function generateFollowUpQuestions(
+  theme: string,
+  fieldFlags: Record<string, QualitySeverity | null>
+): AdaptiveQuestionPacket[] {
+  const packets: AdaptiveQuestionPacket[] = [];
+  const fieldsToCheck: InterviewFieldId[] = ['targetAudience', 'keyMessage'];
+
+  for (const fieldId of fieldsToCheck) {
+    const severity = fieldFlags[fieldId] ?? null;
+    if (severity) {
+      const followUp = getFollowUpForField(fieldId, theme, '', severity);
+      if (followUp) {
+        packets.push(toQuestionPacket(followUp));
+      }
+    }
+  }
+
+  return packets;
 }

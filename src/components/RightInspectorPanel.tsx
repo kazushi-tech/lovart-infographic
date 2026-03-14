@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { ElementData, SlideData } from '../demoData';
 import DownloadActions from './DownloadActions';
-import { Settings2, Type, Layout, Database, AlertCircle, Info, FileImage, Layers } from 'lucide-react';
+import type { ValidationWarning } from '../services/contentValidator';
+import { Settings2, Type, Layout, Database, AlertCircle, Info, FileImage, Layers, AlertTriangle, ShieldCheck } from 'lucide-react';
 
 interface RightInspectorPanelProps {
   activeSlide: SlideData | null;
   selectedElement: ElementData | null;
   onUpdateElement: (id: string, updates: Partial<ElementData>) => void;
   onSelectElement: (id: string) => void;
+  slideWarnings?: ValidationWarning[];
 }
 
 export default function RightInspectorPanel({
@@ -15,6 +17,7 @@ export default function RightInspectorPanel({
   selectedElement,
   onUpdateElement,
   onSelectElement,
+  slideWarnings = [],
 }: RightInspectorPanelProps) {
   const [activeTab, setActiveTab] = useState<'text' | 'layout' | 'data'>('text');
 
@@ -233,6 +236,44 @@ export default function RightInspectorPanel({
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Validation Warnings */}
+            <div className="space-y-3">
+              <h3 className="text-[10px] font-medium text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                {slideWarnings.length > 0 ? (
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                ) : (
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                )}
+                品質チェック
+              </h3>
+              {slideWarnings.length > 0 ? (
+                <div className="space-y-1.5">
+                  {slideWarnings.map((w, i) => (
+                    <div
+                      key={i}
+                      className={`p-2 rounded border text-[11px] ${
+                        w.severity === 'critical'
+                          ? 'bg-red-950/30 border-red-800/40 text-red-300'
+                          : w.severity === 'major'
+                          ? 'bg-amber-950/30 border-amber-800/40 text-amber-300'
+                          : 'bg-slate-950 border-slate-800 text-slate-400'
+                      }`}
+                    >
+                      <p>{w.message}</p>
+                      {w.suggestion && (
+                        <p className="text-[10px] text-slate-500 mt-1">{w.suggestion}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-3 bg-slate-950 border border-slate-800 rounded text-[11px] text-emerald-400 flex items-center gap-2">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  問題なし
+                </div>
+              )}
             </div>
 
             {/* Export Status */}

@@ -1,11 +1,45 @@
 // Brief compilation utilities
 
-import type { BriefDraft, AnswerEntry } from './schema';
+import type { BriefDraft, AnswerEntry, InterviewFieldId } from './schema';
 import type { ResearchPacket } from '../demoData';
+import type { BriefQualityResult, QualityFlag } from './answerQuality';
 
 export interface BriefSummaryItem {
   label: string;
   value: string;
+}
+
+export interface QualityIssueGroup {
+  label: string;
+  fieldId: InterviewFieldId;
+  flags: QualityFlag[];
+}
+
+/**
+ * Group quality flags by field for review display.
+ */
+export function getQualityIssueGroups(quality: BriefQualityResult): QualityIssueGroup[] {
+  const fieldLabels: Record<string, string> = {
+    theme: 'テーマ',
+    targetAudience: 'ターゲット',
+    keyMessage: 'キーメッセージ',
+    supplementary: '補足事項',
+  };
+
+  const groupMap = new Map<string, QualityIssueGroup>();
+
+  for (const flag of quality.flags) {
+    if (!groupMap.has(flag.fieldId)) {
+      groupMap.set(flag.fieldId, {
+        label: fieldLabels[flag.fieldId] || flag.fieldId,
+        fieldId: flag.fieldId,
+        flags: [],
+      });
+    }
+    groupMap.get(flag.fieldId)!.flags.push(flag);
+  }
+
+  return Array.from(groupMap.values());
 }
 
 export function getBriefSummaryItems(brief: BriefDraft): BriefSummaryItem[] {
@@ -20,7 +54,82 @@ export function getBriefSummaryItems(brief: BriefDraft): BriefSummaryItem[] {
   return items;
 }
 
-// M4: Rich Brief types for evidence-aware prompt generation
+// M4: Generation brief — structured "AI understanding" for review gate
+
+export interface GenerationBriefSection {
+  label: string;
+  content: string;
+  type: 'audience' | 'goal' | 'must-include' | 'assumption';
+}
+
+/**
+ * Build structured "AI understanding" sections for the review gate.
+ * This shows the user how their answers will be interpreted for generation.
+ */
+export function buildGenerationBrief(
+  brief: BriefDraft,
+  followUpHints: string[]
+): GenerationBriefSection[] {
+  const sections: GenerationBriefSection[] = [];
+
+  // Who is this for?
+  const audienceDetail = followUpHints.find(h => h.includes('視点') || h.includes('重視') || h.includes('訴求'));
+  sections.push({
+    label: '誰に向けた資料か',
+    content: brief.targetAudience
+      ? `${brief.targetAudience}${audienceDetail ? `（${audienceDetail}）` : ''}`
+      : '（未設定）',
+    type: 'audience',
+  });
+
+  // What should they do/understand?
+  const goalHint = followUpHints.find(h => h.includes('型') || h.includes('構成'));
+  sections.push({
+    label: '相手に理解・判断・実行してほしいこと',
+    content: brief.keyMessage
+      ? `${brief.keyMessage}${goalHint ? `\n→ ${goalHint}` : ''}`
+      : '（未設定）',
+    type: 'goal',
+  });
+
+  // Must-include items
+  const mustInclude: string[] = [];
+  if (brief.supplementary && brief.supplementary !== '特になし' && brief.supplementary !== '（スキップ）') {
+    mustInclude.push(brief.supplementary);
+  }
+  if (mustInclude.length > 0) {
+    sections.push({
+      label: '必ず含めるべき要素',
+      content: mustInclude.join('、'),
+      type: 'must-include',
+    });
+  }
+
+  // AI assumptions
+  const assumptions: string[] = [];
+  if (!brief.supplementary || brief.supplementary === '特になし' || brief.supplementary === '（スキップ）') {
+    assumptions.push('補足情報なし — AI が一般的な構成で生成します');
+  }
+  if (brief.slideCount) {
+    const count = parseInt(brief.slideCount, 10);
+    if (count <= 3) {
+      assumptions.push('3枚構成のため、要点を絞った簡潔な内容になります');
+    } else if (count >= 8) {
+      assumptions.push(`${count}枚構成のため、詳細な展開を含みます`);
+    }
+  }
+  if (assumptions.length > 0) {
+    sections.push({
+      label: 'AI が置いている前提',
+      content: assumptions.join('\n'),
+      type: 'assumption',
+    });
+  }
+
+  return sections;
+}
+
+// Rich Brief types for evidence-aware prompt generation
 
 export interface RichBriefContext {
   /** Normalized theme */
@@ -45,15 +154,20 @@ export interface RichBriefContext {
   sourceCount?: number;
   /** Warnings from research (optional) */
   researchWarnings?: string[];
+  /** Follow-up prompt hints for generation guidance */
+  followUpHints?: string[];
+  /** Items to avoid in generation */
+  avoidItems?: string[];
 }
 
 /**
- * Build a rich brief context from answers and optional research packet.
+ * Build a rich brief context from answers, follow-up answers, and optional research packet.
  * This provides a comprehensive context for prompt generation.
  */
 export function buildRichBrief(
   answers: Record<string, AnswerEntry>,
-  researchPacket?: ResearchPacket
+  researchPacket?: ResearchPacket,
+  followUpAnswers?: Array<{ parentFieldId: string; label: string; promptHint?: string }>
 ): RichBriefContext {
   const theme = answers.theme?.label || answers.theme?.value || '';
   const targetAudience = answers.targetAudience?.label || answers.targetAudience?.value || '';
@@ -63,14 +177,32 @@ export function buildRichBrief(
   const supplementary = answers.supplementary?.label || answers.supplementary?.value || '';
   const slideCount = parseInt(answers.slideCount?.value || '5', 10);
 
+  // Enrich audience/message with follow-up detail
+  let confirmedAudience = targetAudience;
+  let confirmedMessage = keyMessage;
+  const avoidItems: string[] = [];
+
+  if (followUpAnswers) {
+    for (const fu of followUpAnswers) {
+      if (fu.parentFieldId === 'targetAudience' && fu.label) {
+        confirmedAudience = `${targetAudience}（${fu.label}）`;
+      }
+      if (fu.parentFieldId === 'keyMessage' && fu.label) {
+        confirmedMessage = `${keyMessage}（${fu.label}）`;
+      }
+    }
+  }
+
   const context: RichBriefContext = {
     theme,
-    targetAudience,
-    keyMessage,
+    targetAudience: confirmedAudience,
+    keyMessage: confirmedMessage,
     styleId,
     tone,
     supplementary,
     slideCount,
+    followUpHints: followUpAnswers?.map(f => f.promptHint).filter((h): h is string => !!h),
+    avoidItems: avoidItems.length > 0 ? avoidItems : undefined,
   };
 
   // Enrich with research data if available
@@ -110,10 +242,24 @@ ${brief.researchSummary}
 `;
   }
 
+  if (brief.followUpHints && brief.followUpHints.length > 0) {
+    narrative += `
+## 確認済みの方向性
+${brief.followUpHints.map(h => `- ${h}`).join('\n')}
+`;
+  }
+
   if (brief.researchWarnings && brief.researchWarnings.length > 0) {
     narrative += `
 ## 注意事項
 ${brief.researchWarnings.map(w => `- ${w}`).join('\n')}
+`;
+  }
+
+  if (brief.avoidItems && brief.avoidItems.length > 0) {
+    narrative += `
+## 避けるべき内容
+${brief.avoidItems.map(a => `- ${a}`).join('\n')}
 `;
   }
 
