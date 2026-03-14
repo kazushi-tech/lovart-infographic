@@ -14,6 +14,7 @@ import { getDesignToken } from '../designTokens';
 import { enqueue, onProgress as onBgQueueProgress } from '../services/backgroundQueue';
 import { useApiKeys } from '../hooks/useApiKeys';
 import { useDeckHistory } from '../hooks/useDeckHistory';
+import { useAdaptiveOptions } from '../hooks/useAdaptiveOptions';
 import { AppScreen, AnswerEntry, InterviewFieldId, INTERVIEW_STEPS } from '../interview/schema';
 import type { FollowUpAnswerEntry } from '../interview/state';
 import { assessAnswerQuality } from '../interview/answerQuality';
@@ -38,6 +39,12 @@ export default function AppShell() {
   } = useApiKeys();
 
   const { decks, saveDeck, loadDeck, removeDeck, refresh: refreshHistory } = useDeckHistory();
+  const {
+    getOptions: getAdaptiveOptions,
+    isLoading: isAdaptiveLoading,
+    prefetchAll: prefetchAdaptiveOptions,
+    clearCache: clearAdaptiveOptions,
+  } = useAdaptiveOptions();
 
   // --- State model ---
   const [screen, setScreen] = useState<AppScreen>('wizard');
@@ -238,6 +245,18 @@ export default function AppShell() {
       setScreen('review');
     }
   }, [wizardState.phase, screen]);
+
+  useEffect(() => {
+    if (!briefDraft.theme || !briefDraft.slideCount) {
+      return;
+    }
+
+    void prefetchAdaptiveOptions({
+      theme: briefDraft.theme,
+      styleId: briefDraft.styleId,
+      slideCount: briefDraft.slideCount,
+    });
+  }, [briefDraft.slideCount, briefDraft.styleId, briefDraft.theme, prefetchAdaptiveOptions]);
 
   // Editor-only: handle post-generation messages
   const handleSendMessage = (text: string) => {
@@ -471,6 +490,7 @@ export default function AppShell() {
     setCurrentDeckId(null);
     setResearchPacket(undefined);
     dispatch({ type: 'reset' });
+    clearAdaptiveOptions();
     setScreen('wizard');
     setSlides([]);
     setActiveSlideId(null);
@@ -512,6 +532,13 @@ export default function AppShell() {
               onCancel={handleNew}
               isGenerateDisabled={isRuntimeConfigLoading}
               isGenerateLoading={isGenerating}
+              adaptiveOptions={{
+                targetAudience: getAdaptiveOptions('targetAudience'),
+                keyMessage: getAdaptiveOptions('keyMessage'),
+                tone: getAdaptiveOptions('tone'),
+                supplementary: getAdaptiveOptions('supplementary'),
+              }}
+              isAdaptiveLoading={isAdaptiveLoading}
             />
             {/* Loading Overlay */}
             {(screen === 'generating' || isGenerating) && (

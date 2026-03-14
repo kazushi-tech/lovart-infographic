@@ -27,10 +27,9 @@ export default function WizardStepDialog({
   const mergedOptions = useMemo(() => {
     const relevantAdaptive = adaptiveOptions[step.fieldId as AdaptiveFieldId] || [];
     if (relevantAdaptive.length > 0) {
-      const defaultIds = step.options?.map(o => o.id) || [];
-      // Add adaptive options that aren't already in defaults
-      const newAdaptive = relevantAdaptive.filter(ao => !defaultIds.includes(ao.id));
-      return [...(step.options || []), ...newAdaptive];
+      const adaptiveIds = new Set(relevantAdaptive.map(option => option.id));
+      const defaultOptions = (step.options || []).filter(option => !adaptiveIds.has(option.id));
+      return [...relevantAdaptive, ...defaultOptions];
     }
     return step.options || [];
   }, [step.options, adaptiveOptions, step.fieldId]);
@@ -64,11 +63,11 @@ export default function WizardStepDialog({
       if (step.inputType === 'text') {
         setTextValue(existingAnswer.value);
       } else {
-        const opt = step.options?.find(o => o.id === existingAnswer.value);
+        const opt = mergedOptions.find(o => o.id === existingAnswer.value);
         if (opt) {
           setPendingChoice(opt);
         } else if (existingAnswer.source === 'text') {
-          const otherOpt = step.options?.find(o => o.mode === 'custom');
+          const otherOpt = mergedOptions.find(o => o.mode === 'custom');
           if (otherOpt) {
             setPendingChoice(otherOpt);
             setCustomText(existingAnswer.label);
@@ -80,7 +79,7 @@ export default function WizardStepDialog({
       setTextValue('');
       setCustomText('');
     }
-  }, [step.fieldId, existingAnswer]);
+  }, [step.fieldId, step.inputType, existingAnswer, mergedOptions]);
 
   const doCommit = useCallback((entry: AnswerEntry) => {
     if (commitLockRef.current) return;

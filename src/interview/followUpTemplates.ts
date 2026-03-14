@@ -19,6 +19,7 @@ export interface FollowUpOption {
 }
 
 export type ThemeCategory =
+  | 'workstyle_remote'
   | 'ai_dx'
   | 'sales_marketing'
   | 'hr_recruitment'
@@ -31,6 +32,7 @@ export type ThemeCategory =
  */
 export function classifyTheme(theme: string): ThemeCategory {
   const t = theme.toLowerCase();
+  if (/リモートワーク|テレワーク|在宅勤務|ハイブリッド勤務|働き方/.test(t)) return 'workstyle_remote';
   if (/ai|dx|デジタル|自動化|機械学習|生成ai/.test(t)) return 'ai_dx';
   if (/営業|セールス|マーケ|販促|提案|アップセル|受注/.test(t)) return 'sales_marketing';
   if (/採用|リクルート|候補者|人材|ブランディング|evp/.test(t)) return 'hr_recruitment';
@@ -42,6 +44,34 @@ export function classifyTheme(theme: string): ThemeCategory {
 // --- Follow-up templates per theme category × field ---
 
 const THEME_FOLLOWUPS: Record<ThemeCategory, Partial<Record<InterviewFieldId, FollowUpStep>>> = {
+  workstyle_remote: {
+    targetAudience: {
+      id: 'fu-remote-audience',
+      parentFieldId: 'targetAudience',
+      question: 'リモートワークのどの立場の人に向けた資料ですか？',
+      reason: 'リモートワークは、経営・制度設計・現場運用で論点が大きく変わるためです',
+      options: [
+        { id: 'remote-exec', label: '経営層（全社方針・投資判断）', promptHint: '経営判断・全社方針・コスト最適化を重視' },
+        { id: 'remote-manager', label: '部門長（生産性・マネジメント改善）', promptHint: 'チーム生産性・評価・運用課題を重視' },
+        { id: 'remote-hr', label: '人事・総務（制度設計・運用整備）', promptHint: '制度設計・ルール整備・定着施策を重視' },
+        { id: 'remote-staff', label: '現場社員（働きやすさ・実務改善）', promptHint: '実務のしやすさ・コミュニケーション改善を重視' },
+      ],
+      fallbackPrompt: '想定読者の部署や役割を入力してください',
+    },
+    keyMessage: {
+      id: 'fu-remote-message',
+      parentFieldId: 'keyMessage',
+      question: '今回いちばん強く伝えたい結論はどれですか？',
+      reason: 'リモートワークは「コスト」だけでなく、生産性・採用・制度運用など複数の結論に分かれるためです',
+      options: [
+        { id: 'remote-productivity', label: '生産性を落とさず成果を高める運用に見直すべき', promptHint: '生産性改善・会議運営・評価設計を含めて構成' },
+        { id: 'remote-retention', label: '離職防止とエンゲージメント向上のために制度整備すべき', promptHint: '定着率・満足度・エンゲージメント改善を重視' },
+        { id: 'remote-cost', label: 'オフィスコスト最適化と働き方の両立を進めるべき', promptHint: 'コスト最適化と働き方の両立を比較で見せる' },
+        { id: 'remote-policy', label: '出社と在宅のルールを再設計して運用を安定させるべき', promptHint: '運用ルール・制度設計・社内合意形成を重視' },
+      ],
+      fallbackPrompt: '伝えたい結論を具体的に入力してください',
+    },
+  },
   ai_dx: {
     targetAudience: {
       id: 'fu-ai-audience',
