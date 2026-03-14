@@ -239,6 +239,100 @@ const THEME_FOLLOWUPS: Record<ThemeCategory, Partial<Record<InterviewFieldId, Fo
   },
 };
 
+const THEME_TOPIC_FOLLOWUPS: Record<ThemeCategory, FollowUpStep> = {
+  workstyle_remote: {
+    id: 'fu-remote-theme-focus',
+    parentFieldId: 'theme',
+    question: 'リモートワークの何を主題にしたいですか？',
+    reason: '同じリモートワークでも、生産性・制度・コストで構成が大きく変わるためです',
+    options: [
+      { id: 'remote-theme-productivity', label: '生産性や成果の出し方を主題にしたい', promptHint: '生産性指標・会議運営・評価設計を重視' },
+      { id: 'remote-theme-policy', label: '制度設計やルール整備を主題にしたい', promptHint: '制度設計・出社ルール・定着施策を重視' },
+      { id: 'remote-theme-cost', label: 'コスト最適化と働き方の両立を主題にしたい', promptHint: '固定費最適化・働き方の両立を重視' },
+      { id: 'remote-theme-management', label: 'マネジメントやチーム運営を主題にしたい', promptHint: 'マネジメント改善・コミュニケーション運用を重視' },
+    ],
+    fallbackPrompt: '今回のテーマで最も重視する論点を入力してください',
+  },
+  ai_dx: {
+    id: 'fu-ai-theme-focus',
+    parentFieldId: 'theme',
+    question: 'AI導入のどこに焦点を当てたいですか？',
+    reason: 'AIテーマは、工数削減・売上成長・全社展開など論点が分かれるためです',
+    options: [
+      { id: 'ai-theme-cost', label: '工数削減や業務効率化に焦点を当てたい', promptHint: '工数削減・自動化・ROI を重視' },
+      { id: 'ai-theme-growth', label: '売上成長や競争優位に焦点を当てたい', promptHint: '成長機会・競争優位・収益インパクトを重視' },
+      { id: 'ai-theme-quality', label: '品質向上やスピード改善に焦点を当てたい', promptHint: '品質・処理速度・顧客体験改善を重視' },
+      { id: 'ai-theme-rollout', label: '導入ロードマップや全社展開に焦点を当てたい', promptHint: '導入計画・展開順序・定着を重視' },
+    ],
+    fallbackPrompt: 'AI導入テーマの焦点を入力してください',
+  },
+  sales_marketing: {
+    id: 'fu-sales-theme-focus',
+    parentFieldId: 'theme',
+    question: '営業・提案のどこを強く打ち出したいですか？',
+    reason: '提案資料は、差別化・受注・稟議通過で構成が変わるためです',
+    options: [
+      { id: 'sales-theme-winrate', label: '受注率や商談前進率を上げたい', promptHint: '受注率・次回商談化を重視' },
+      { id: 'sales-theme-diff', label: '競合との差別化を明確にしたい', promptHint: '比較優位・独自価値を重視' },
+      { id: 'sales-theme-budget', label: '予算承認や稟議通過を狙いたい', promptHint: '費用対効果・稟議材料を重視' },
+      { id: 'sales-theme-proof', label: '導入後の効果や事例を見せたい', promptHint: '事例・成果実証を重視' },
+    ],
+    fallbackPrompt: '営業テーマで最も重視する狙いを入力してください',
+  },
+  hr_recruitment: {
+    id: 'fu-hr-theme-focus',
+    parentFieldId: 'theme',
+    question: '採用テーマのどこを主題にしたいですか？',
+    reason: '採用ブランディングは、候補者訴求・EVP・定着で構成が変わるためです',
+    options: [
+      { id: 'hr-theme-evp', label: '候補者に刺さる EVP を主題にしたい', promptHint: 'EVP・魅力訴求を重視' },
+      { id: 'hr-theme-brand', label: '採用ブランドの見せ方を主題にしたい', promptHint: 'ブランドメッセージ・差別化を重視' },
+      { id: 'hr-theme-funnel', label: '応募や選考移行率の改善を主題にしたい', promptHint: '応募率・選考移行率改善を重視' },
+      { id: 'hr-theme-retention', label: '入社後の定着や活躍を主題にしたい', promptHint: '定着・オンボーディングを重視' },
+    ],
+    fallbackPrompt: '採用テーマで最も重視する観点を入力してください',
+  },
+  training: {
+    id: 'fu-training-theme-focus',
+    parentFieldId: 'theme',
+    question: '研修テーマのどこを掘り下げたいですか？',
+    reason: '研修は、知識習得・行動変容・現場定着で構成が変わるためです',
+    options: [
+      { id: 'training-theme-skill', label: '実務スキルの習得を主題にしたい', promptHint: '具体スキル・演習を重視' },
+      { id: 'training-theme-action', label: '受講後の行動変容を主題にしたい', promptHint: '行動変容・現場適用を重視' },
+      { id: 'training-theme-manager', label: '管理職や現場フォローを主題にしたい', promptHint: '管理職巻き込み・定着を重視' },
+      { id: 'training-theme-standard', label: '標準手順の定着を主題にしたい', promptHint: '標準化・運用統一を重視' },
+    ],
+    fallbackPrompt: '研修テーマで最も重視する観点を入力してください',
+  },
+  compliance_risk: {
+    id: 'fu-risk-theme-focus',
+    parentFieldId: 'theme',
+    question: 'リスクテーマのどこを主題にしたいですか？',
+    reason: '予防・対応・規制対応では、伝えるべき内容が大きく変わるためです',
+    options: [
+      { id: 'risk-theme-prevent', label: '予防や未然防止を主題にしたい', promptHint: '予防策・行動基準を重視' },
+      { id: 'risk-theme-response', label: 'インシデント対応を主題にしたい', promptHint: '対応フロー・初動を重視' },
+      { id: 'risk-theme-regulation', label: '法令や規制対応を主題にしたい', promptHint: '規制対応・期限管理を重視' },
+      { id: 'risk-theme-governance', label: '経営レベルのガバナンスを主題にしたい', promptHint: 'ガバナンス・責任体制を重視' },
+    ],
+    fallbackPrompt: 'リスクテーマで最も重視する観点を入力してください',
+  },
+  general: {
+    id: 'fu-gen-theme-focus',
+    parentFieldId: 'theme',
+    question: 'そのテーマで、特に何をはっきりさせたいですか？',
+    reason: 'テーマが広いと構成がぼやけるため、まず論点の軸を決めます',
+    options: [
+      { id: 'gen-theme-efficiency', label: 'コスト削減や効率化をはっきりさせたい', promptHint: '費用対効果・改善効果を重視' },
+      { id: 'gen-theme-growth', label: '売上拡大や成長機会をはっきりさせたい', promptHint: '成長余地・機会訴求を重視' },
+      { id: 'gen-theme-risk', label: 'リスク低減や安全性向上をはっきりさせたい', promptHint: 'リスク比較・予防策を重視' },
+      { id: 'gen-theme-choice', label: 'どの選択肢を採るべきかをはっきりさせたい', promptHint: '比較・意思決定支援を重視' },
+    ],
+    fallbackPrompt: 'そのテーマで最も重視する論点を入力してください',
+  },
+};
+
 const GENERAL_AUDIENCE_CONTEXT_FOLLOWUP: FollowUpStep = {
   id: 'fu-gen-audience-context',
   parentFieldId: 'targetAudience',
@@ -381,9 +475,12 @@ export function getFollowUpForField(
   // Only generate follow-ups for flagged fields
   if (!hasFlagSeverity) return null;
   // Only for fields that have templates
-  if (fieldId !== 'targetAudience' && fieldId !== 'keyMessage') return null;
+  if (fieldId !== 'theme' && fieldId !== 'targetAudience' && fieldId !== 'keyMessage') return null;
 
   const category = classifyTheme(theme);
+  if (fieldId === 'theme') {
+    return THEME_TOPIC_FOLLOWUPS[category] ?? THEME_TOPIC_FOLLOWUPS.general;
+  }
   const fieldFollowUps = getFieldFollowUpAnswers(existingFollowUpAnswers, fieldId);
   if (fieldFollowUps.length > 0) {
     return getRefinementFollowUp(fieldId, category, fieldFollowUps);
@@ -404,7 +501,7 @@ export function getAllFollowUps(
   existingFollowUpAnswers: ExistingFollowUpResolution[] = []
 ): FollowUpStep[] {
   const steps: FollowUpStep[] = [];
-  const fieldsToCheck: InterviewFieldId[] = ['targetAudience', 'keyMessage'];
+  const fieldsToCheck: InterviewFieldId[] = ['theme', 'targetAudience', 'keyMessage'];
 
   for (const fieldId of fieldsToCheck) {
     const severity = fieldFlags[fieldId];

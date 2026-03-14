@@ -8,8 +8,8 @@ import RightInspectorPanel from './RightInspectorPanel';
 import ApiKeySettingsModal from './ApiKeySettingsModal';
 import { SlideData, ElementData, ChatMessage, ResearchPacket } from '../demoData';
 import { Loader2 } from 'lucide-react';
-import { generateSlideStructure } from '../services/geminiService';
 import { fetchResearch } from '../services/researchClient';
+import { requestSlideStructure } from '../services/generationClient';
 import { getDesignToken } from '../designTokens';
 import { enqueue, onProgress as onBgQueueProgress } from '../services/backgroundQueue';
 import { useApiKeys } from '../hooks/useApiKeys';
@@ -36,6 +36,9 @@ export default function AppShell() {
     resolvedGeminiKey,
     resolvedImageKey,
     hasResolvableKey,
+    hasResolvableImageKey,
+    hasServerGeminiKey,
+    hasServerImageKey,
     isRuntimeConfigLoading,
   } = useApiKeys();
 
@@ -195,7 +198,7 @@ export default function AppShell() {
     dispatch({ type: 'answer', fieldId: entry.fieldId, entry });
 
     // After answering targetAudience or keyMessage, check if follow-up is needed
-    const followUpFields: InterviewFieldId[] = ['targetAudience', 'keyMessage'];
+    const followUpFields: InterviewFieldId[] = ['theme', 'targetAudience', 'keyMessage'];
     if (followUpFields.includes(entry.fieldId)) {
       const updatedAnswers = { ...wizardState.answers, [entry.fieldId]: entry };
       const updatedFollowUpAnswers = wizardState.followUpAnswers.filter(
@@ -346,7 +349,7 @@ export default function AppShell() {
       // Phase 2: Structure generation
       setGenerationProgress('スライド構成を生成中...');
       const structureStart = Date.now();
-      const newSlides = await generateSlideStructure(
+      const newSlides = await requestSlideStructure(
         interviewData,
         resolvedGeminiKey,
         packet,
@@ -385,11 +388,18 @@ export default function AppShell() {
       const designToken = getDesignToken(interviewData.styleId);
       const backgroundMode = designToken.backgroundMode ?? 'none';
 
-      if (designToken.useAiBackground && resolvedImageKey && backgroundMode !== 'none') {
+      if (designToken.useAiBackground && hasResolvableImageKey && backgroundMode !== 'none') {
         const bgStart = Date.now();
 
         // Subscribe to background queue progress
         const unsubscribeProgress = onBgQueueProgress((progress) => {
+          if (progress.latestResult?.imageUrl) {
+            setSlides(prevSlides => prevSlides.map(slide =>
+              slide.id === progress.latestResult?.slideId
+                ? { ...slide, imageUrl: progress.latestResult.imageUrl }
+                : slide
+            ));
+          }
           if (progress.total > 0) {
             setGenerationProgress(`背景画像を生成中... (${progress.completed}/${progress.total})`);
           }
@@ -414,11 +424,26 @@ export default function AppShell() {
           prompt: slide.bgPrompt || 'abstract professional business background',
           apiKey: resolvedImageKey,
         }));
+
+        if (bgJobs.length === 0) {
+          const existing = await loadDeck(deckId);
+          if (existing) {
+            await saveDeck({
+              ...existing,
+              timings: { ...existing.timings, backgroundMs: 0 },
+              updatedAt: new Date().toISOString(),
+            });
+          }
+          unsubscribeProgress();
+          setGenerationProgress('');
+          return;
+        }
+
         enqueue(bgJobs);
 
         // Update slides as backgrounds complete and save final timing
         const unsubscribeBgComplete = onBgQueueProgress(async (progress) => {
-          if (progress.total === progress.completed) {
+          if (progress.total > 0 && progress.completed + progress.failed === progress.total) {
             const existing = await loadDeck(deckId);
             if (existing) {
               const finalRecord: DeckRecord = {
@@ -655,6 +680,8 @@ export default function AppShell() {
         onClose={() => setIsSettingsOpen(false)}
         initialGeminiApiKey={storedKeys.geminiApiKey}
         initialImageApiKey={storedKeys.imageApiKey}
+        hasServerGeminiKey={hasServerGeminiKey}
+        hasServerImageKey={hasServerImageKey}
         onSave={handleSaveApiKeys}
         onClear={clearKeys}
       />

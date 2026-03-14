@@ -6,6 +6,8 @@ interface ApiKeySettingsModalProps {
   onClose: () => void;
   initialGeminiApiKey: string;
   initialImageApiKey: string;
+  hasServerGeminiKey?: boolean;
+  hasServerImageKey?: boolean;
   onSave: (geminiApiKey: string, imageApiKey: string) => void;
   onClear: () => void;
 }
@@ -15,6 +17,8 @@ export default function ApiKeySettingsModal({
   onClose,
   initialGeminiApiKey,
   initialImageApiKey,
+  hasServerGeminiKey = false,
+  hasServerImageKey = false,
   onSave,
   onClear,
 }: ApiKeySettingsModalProps) {
@@ -84,6 +88,17 @@ export default function ApiKeySettingsModal({
 
         {/* Body */}
         <div className="px-6 py-5 space-y-5">
+          {(hasServerGeminiKey || hasServerImageKey) && (
+            <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-3 py-2">
+              <p className="text-xs text-emerald-200 leading-relaxed">
+                サーバー側に
+                {hasServerGeminiKey ? ' Gemini' : ''}
+                {hasServerGeminiKey && hasServerImageKey ? ' /' : ''}
+                {hasServerImageKey ? ' Image' : ''}
+                {' '}API キーが設定済みです。空欄のままでも生成できます。
+              </p>
+            </div>
+          )}
           {/* Gemini API Key */}
           <div className="space-y-2">
             <label htmlFor="gemini-key" className="block text-sm font-medium text-slate-300">

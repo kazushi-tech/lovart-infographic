@@ -38,27 +38,28 @@ npm install
 
 # 2. 環境変数を設定
 cp .env.example .env
-# .env を編集して API_KEY / GEMINI_API_KEY を設定
+# .env を編集して GEMINI_API_KEY / IMAGE_API_KEY を設定
 
 # 3. 開発サーバー起動（port 3000）
 npm run dev
 ```
 
 **注意**: `npm run dev` は `NODE_ENV` を設定しないため、常に非プロダクションモードとして扱われます。
-これにより `.env` ファイル内の API キーが `/api/runtime-config` 経由でフォールバックとして利用されます。
-本番デプロイ（Render 等）では `NODE_ENV=production` が設定されるため、フォールバックキーは利用されず、
-ユーザーが UI から API キーを入力する必要があります。
+それでも API キーはサーバー側だけで利用され、クライアントには露出しません。
+本番デプロイ（Render 等）でも同様に、Render の環境変数をサーバーが使います。
 
 ## API キーについて
 
 ### 開発環境
 
-`.env` ファイルに設定した `GEMINI_API_KEY` と `API_KEY` が、`/api/runtime-config` エンドポイント経由で dev-only fallback として利用されます。
+`.env` ファイルに設定した `GEMINI_API_KEY` / `IMAGE_API_KEY` を Express サーバーが直接利用します。
+クライアントへ返るのは「サーバー側にキーがあるか」の真偽値だけです。
 
 ### 本番環境
 
-環境変数はサーバー側でのみ利用され、クライアントバンドルには含まれません。
-本番では、ユーザーが UI から自分の API キーを入力する必要があります。
+Render の環境変数はサーバー側でのみ利用され、クライアントバンドルには含まれません。
+構造生成・リサーチ・背景画像生成はすべてサーバー経由で行われます。
+UI からの API キー入力は、サーバー側にキーが無い場合のフォールバックです。
 
 **重要**: 入力された API キーはブラウザの localStorage に保存されます。
 これは利便性のためのものであり、セキュアな vault ではありません。
@@ -68,8 +69,9 @@ npm run dev
 
 | 変数名 | 必須 | 説明 |
 | ------ | ---- | ---- |
-| `GEMINI_API_KEY` | No | 開発用 fallback（構造生成向け）。本番では UI 入力を優先 |
-| `API_KEY` | No | 開発用 fallback（画像生成向け）。有料プロジェクトキーが必要。本番では UI 入力を優先 |
+| `GEMINI_API_KEY` | 推奨 | 構造生成・リサーチ用。画像生成の fallback としても使用 |
+| `IMAGE_API_KEY` | No | 背景画像生成用の専用キー。未設定時は `GEMINI_API_KEY` を使用 |
+| `API_KEY` | No | 旧来の画像生成キー名。`IMAGE_API_KEY` の legacy alias |
 | `APP_URL` | No | ホスティング URL（Render 等でデプロイ時） |
 | `PORT` | No | サーバーポート（デフォルト: 3000） |
 
@@ -99,13 +101,14 @@ npm run lint        # TypeScript 型チェック（tsc --noEmit）
 │   │   ├── TopCanvasToolbar.tsx      # ツールバー（UI のみ）
 │   │   └── DownloadActions.tsx       # ダウンロードボタン（UI のみ）
 │   ├── services/
-│   │   └── geminiService.ts          # Gemini API 呼び出し
+│   │   ├── geminiService.ts          # サーバー側 Gemini 呼び出し
+│   │   └── generationClient.ts       # クライアント -> サーバー生成API 呼び出し
 │   ├── designTokens.ts              # テンプレート別デザイントークン
 │   ├── demoData.ts                  # 型定義 + モック + デモステート
 │   ├── index.css                    # Tailwind v4 エントリ
 │   ├── main.tsx                     # React エントリポイント
 │   └── App.tsx                      # ルートコンポーネント
-├── server.ts                        # Express + Vite dev middleware + /api/runtime-config
+├── server.ts                        # Express + Vite dev middleware + 生成API
 ├── vite.config.ts
 ├── tsconfig.json
 └── package.json

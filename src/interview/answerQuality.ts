@@ -53,12 +53,15 @@ function combineMessageValue(value: string, resolution: QualityFollowUpResolutio
   return [value.trim(), resolution?.label.trim()].filter(Boolean).join(' / ');
 }
 
-function assessTheme(value: string): QualityFlag | null {
+function assessTheme(value: string, resolution: QualityFollowUpResolution | null): QualityFlag | null {
   if (!value.trim()) {
     return { fieldId: 'theme', severity: 'critical', message: 'テーマが未入力です', suggestion: '具体的なテーマを入力してください' };
   }
   for (const pat of VAGUE_THEME_PATTERNS) {
     if (pat.test(value.trim())) {
+      if (resolution) {
+        return null;
+      }
       return {
         fieldId: 'theme',
         severity: 'warning',
@@ -214,7 +217,8 @@ export function assessAnswerQuality(
 
   // Theme check
   const themeVal = answers.theme?.label || answers.theme?.value || '';
-  const themeFlag = assessTheme(themeVal);
+  const themeResolutions = getFollowUpResolutions(followUpAnswers, 'theme');
+  const themeFlag = assessTheme(themeVal, combineFollowUpResolution(themeResolutions, 'theme'));
   if (themeFlag) flags.push(themeFlag);
 
   // Target audience check

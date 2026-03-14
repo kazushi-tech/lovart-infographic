@@ -314,7 +314,7 @@ export function generateFollowUpQuestions(
   existingFollowUpAnswers: ExistingFollowUpResolution[] = []
 ): AdaptiveQuestionPacket[] {
   const packets: AdaptiveQuestionPacket[] = [];
-  const fieldsToCheck: InterviewFieldId[] = ['targetAudience', 'keyMessage'];
+  const fieldsToCheck: InterviewFieldId[] = ['theme', 'targetAudience', 'keyMessage'];
 
   for (const fieldId of fieldsToCheck) {
     const severity = fieldFlags[fieldId] ?? null;

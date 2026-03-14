@@ -7,6 +7,16 @@ app.use(express.json());
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
+function getServerKeys() {
+  const geminiKey = (process.env.GEMINI_API_KEY || '').trim();
+  const imageKey = (process.env.IMAGE_API_KEY || process.env.API_KEY || geminiKey || '').trim();
+  return { geminiKey, imageKey };
+}
+
+function resolveEffectiveKey(serverKey: string, providedKey?: string): string {
+  return (serverKey || providedKey || '').trim();
+}
+
 // API routes can go here (e.g. for database operations)
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
@@ -19,9 +29,10 @@ app.get("/api/runtime-config", (req, res) => {
   // Treat any non-production environment as development-like
   // This allows local development with `npm run dev` which doesn't set NODE_ENV
   const isDevLike = process.env.NODE_ENV !== 'production';
+  const { geminiKey, imageKey } = getServerKeys();
   res.json({
-    devFallbackGeminiKey: isDevLike ? (process.env.GEMINI_API_KEY || '') : '',
-    devFallbackImageKey: isDevLike ? (process.env.API_KEY || '') : '',
+    hasServerGeminiKey: Boolean(geminiKey),
+    hasServerImageKey: Boolean(imageKey),
     devMode: isDevLike,
   });
 });
@@ -32,14 +43,16 @@ app.get("/api/runtime-config", (req, res) => {
 app.post("/api/research", async (req, res) => {
   try {
     const { theme, apiKey, preferences } = req.body;
-    if (!theme || !apiKey) {
-      res.status(400).json({ error: 'theme and apiKey are required' });
+    const { geminiKey: serverGeminiKey } = getServerKeys();
+    const effectiveApiKey = resolveEffectiveKey(serverGeminiKey, apiKey);
+    if (!theme || !effectiveApiKey) {
+      res.status(400).json({ error: 'theme and usable apiKey are required' });
       return;
     }
 
     // Use Gemini to generate research with grounded sources
     const { GoogleGenAI } = await import('@google/genai');
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey: effectiveApiKey });
 
     const freshnessHint = preferences?.sourcePreference === 'recent-only'
       ? '2024年以降のデータのみ使用。古い情報は使わない。'
@@ -97,6 +110,52 @@ app.post("/api/research", async (req, res) => {
       claims: [],
       warnings: [`リサーチ取得に失敗しました: ${error.message}`],
     });
+  }
+});
+
+app.post("/api/generate-structure", async (req, res) => {
+  try {
+    const { interviewData, apiKey, researchPacket, answers, followUpAnswers } = req.body;
+    const { geminiKey: serverGeminiKey } = getServerKeys();
+    const effectiveApiKey = resolveEffectiveKey(serverGeminiKey, apiKey);
+
+    if (!interviewData?.theme || !effectiveApiKey) {
+      res.status(400).json({ error: 'interviewData.theme and usable apiKey are required' });
+      return;
+    }
+
+    const { generateSlideStructure } = await import('./src/services/geminiService');
+    const slides = await generateSlideStructure(
+      interviewData,
+      effectiveApiKey,
+      researchPacket,
+      answers,
+      followUpAnswers,
+    );
+    res.json(slides);
+  } catch (error: any) {
+    console.error('Structure generation error:', error.message);
+    res.status(500).json({ error: error.message || 'Failed to generate slide structure' });
+  }
+});
+
+app.post("/api/generate-background", async (req, res) => {
+  try {
+    const { prompt, apiKey } = req.body;
+    const { imageKey: serverImageKey } = getServerKeys();
+    const effectiveApiKey = resolveEffectiveKey(serverImageKey, apiKey);
+
+    if (!prompt || !effectiveApiKey) {
+      res.status(400).json({ error: 'prompt and usable apiKey are required' });
+      return;
+    }
+
+    const { generateBackgroundImage } = await import('./src/services/geminiService');
+    const imageUrl = await generateBackgroundImage(prompt, effectiveApiKey);
+    res.json({ imageUrl });
+  } catch (error: any) {
+    console.error('Background generation error:', error.message);
+    res.status(500).json({ error: error.message || 'Failed to generate background image' });
   }
 });
 

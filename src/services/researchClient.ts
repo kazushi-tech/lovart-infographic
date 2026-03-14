@@ -29,7 +29,7 @@ function emptyPacket(warning: string): ResearchPacket {
  */
 export async function fetchResearch(
   theme: string,
-  apiKey: string,
+  apiKey?: string,
   preferences?: ResearchPreferences,
 ): Promise<ResearchPacket> {
   try {

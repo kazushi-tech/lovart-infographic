@@ -59,9 +59,9 @@ export const DESIGN_TOKENS: Record<string, DesignToken> = {
     },
     textShadow: 'none',
     accent: '#2563EB',
-    useAiBackground: false,
+    useAiBackground: true,
     fallbackBg: 'linear-gradient(135deg, #F8FAFC 0%, #E2E8F0 50%, #DBEAFE 100%)',
-    backgroundMode: 'none',
+    backgroundMode: 'cover-only',
     layoutVariant: 'standard',
   },
   professional: {
@@ -82,9 +82,9 @@ export const DESIGN_TOKENS: Record<string, DesignToken> = {
     },
     textShadow: 'none',
     accent: '#3B82F6',
-    useAiBackground: false,
+    useAiBackground: true,
     fallbackBg: 'linear-gradient(135deg, #F1F5F9 0%, #E0E7FF 50%, #EFF6FF 100%)',
-    backgroundMode: 'none',
+    backgroundMode: 'cover-only',
     layoutVariant: 'standard',
   },
   executive: {

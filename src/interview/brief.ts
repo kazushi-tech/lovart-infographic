@@ -73,6 +73,10 @@ export function buildGenerationBrief(
   followUpAnswers: FollowUpAnswerEntry[] = []
 ): GenerationBriefSection[] {
   const sections: GenerationBriefSection[] = [];
+  const themeResolution = followUpAnswers
+    .filter(answer => answer.parentFieldId === 'theme' && answer.label.trim().length > 0)
+    .map(answer => answer.label.trim())
+    .join(' / ');
   const audienceResolution = followUpAnswers
     .filter(answer => answer.parentFieldId === 'targetAudience' && answer.label.trim().length > 0)
     .map(answer => answer.label.trim())
@@ -125,6 +129,9 @@ export function buildGenerationBrief(
 
   // AI assumptions
   const assumptions: string[] = [];
+  if (themeResolution) {
+    assumptions.push(`テーマの焦点は「${themeResolution}」として解釈します`);
+  }
   if (!brief.supplementary || brief.supplementary === '特になし' || brief.supplementary === '（スキップ）') {
     assumptions.push('補足情報なし — AI が一般的な構成で生成します');
   }
@@ -196,11 +203,15 @@ export function buildRichBrief(
   const slideCount = parseInt(answers.slideCount?.value || '5', 10);
 
   // Enrich audience/message with follow-up detail
+  let confirmedTheme = theme;
   let confirmedAudience = targetAudience;
   let confirmedMessage = keyMessage;
   const avoidItems: string[] = [];
 
   if (followUpAnswers) {
+    const themeDetails = followUpAnswers
+      .filter(fu => fu.parentFieldId === 'theme' && fu.label)
+      .map(fu => fu.label.trim());
     const audienceDetails = followUpAnswers
       .filter(fu => fu.parentFieldId === 'targetAudience' && fu.label)
       .map(fu => fu.label.trim());
@@ -208,6 +219,9 @@ export function buildRichBrief(
       .filter(fu => fu.parentFieldId === 'keyMessage' && fu.label)
       .map(fu => fu.label.trim());
 
+    if (themeDetails.length > 0) {
+      confirmedTheme = `${theme}（${themeDetails.join(' / ')}）`;
+    }
     if (audienceDetails.length > 0) {
       confirmedAudience = `${targetAudience}（${audienceDetails.join(' / ')}）`;
     }
@@ -217,7 +231,7 @@ export function buildRichBrief(
   }
 
   const context: RichBriefContext = {
-    theme,
+    theme: confirmedTheme,
     targetAudience: confirmedAudience,
     keyMessage: confirmedMessage,
     styleId,

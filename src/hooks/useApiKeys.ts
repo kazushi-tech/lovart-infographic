@@ -12,6 +12,9 @@ export interface UseApiKeysReturn {
   resolvedGeminiKey: string;
   resolvedImageKey: string;
   hasResolvableKey: boolean;
+  hasResolvableImageKey: boolean;
+  hasServerGeminiKey: boolean;
+  hasServerImageKey: boolean;
   isRuntimeConfigLoading: boolean;
 }
 
@@ -19,19 +22,20 @@ const STORAGE_GEMINI_KEY = 'lovart_gemini_api_key';
 const STORAGE_IMAGE_KEY = 'lovart_image_api_key';
 
 interface RuntimeConfig {
-  devFallbackGeminiKey: string;
-  devFallbackImageKey: string;
+  hasServerGeminiKey: boolean;
+  hasServerImageKey: boolean;
+  devMode: boolean;
 }
 
 function loadFromLocalStorage(): ResolvedApiKeys {
-  const geminiKey = localStorage.getItem(STORAGE_GEMINI_KEY) || '';
-  const imageKey = localStorage.getItem(STORAGE_IMAGE_KEY) || '';
+  const geminiKey = (localStorage.getItem(STORAGE_GEMINI_KEY) || '').trim();
+  const imageKey = (localStorage.getItem(STORAGE_IMAGE_KEY) || '').trim();
   return { geminiApiKey: geminiKey, imageApiKey: imageKey };
 }
 
 function saveToLocalStorage(keys: ResolvedApiKeys): void {
-  localStorage.setItem(STORAGE_GEMINI_KEY, keys.geminiApiKey);
-  localStorage.setItem(STORAGE_IMAGE_KEY, keys.imageApiKey);
+  localStorage.setItem(STORAGE_GEMINI_KEY, keys.geminiApiKey.trim());
+  localStorage.setItem(STORAGE_IMAGE_KEY, keys.imageApiKey.trim());
 }
 
 function clearLocalStorage(): void {
@@ -43,17 +47,11 @@ function resolveKeys(
   stored: ResolvedApiKeys,
   runtimeConfig: RuntimeConfig
 ): { geminiKey: string; imageKey: string } {
-  const { devFallbackGeminiKey, devFallbackImageKey } = runtimeConfig;
-
   const resolvedGeminiKey =
-    stored.geminiApiKey ||
-    devFallbackGeminiKey ||
-    devFallbackImageKey ||
-    '';
+    stored.geminiApiKey || '';
 
   const resolvedImageKey =
     stored.imageApiKey ||
-    devFallbackImageKey ||
     resolvedGeminiKey ||
     '';
 
@@ -63,8 +61,9 @@ function resolveKeys(
 export function useApiKeys(): UseApiKeysReturn {
   const [storedKeys, setStoredKeys] = useState<ResolvedApiKeys>(loadFromLocalStorage);
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig>({
-    devFallbackGeminiKey: '',
-    devFallbackImageKey: ''
+    hasServerGeminiKey: false,
+    hasServerImageKey: false,
+    devMode: false,
   });
   const [isRuntimeConfigLoading, setIsRuntimeConfigLoading] = useState(true);
 
@@ -96,8 +95,12 @@ export function useApiKeys(): UseApiKeysReturn {
   }, []);
 
   const setKeys = useCallback((next: ResolvedApiKeys) => {
-    saveToLocalStorage(next);
-    setStoredKeys(next);
+    const sanitized = {
+      geminiApiKey: next.geminiApiKey.trim(),
+      imageApiKey: next.imageApiKey.trim(),
+    };
+    saveToLocalStorage(sanitized);
+    setStoredKeys(sanitized);
   }, []);
 
   const clearKeys = useCallback(() => {
@@ -108,7 +111,10 @@ export function useApiKeys(): UseApiKeysReturn {
   const { geminiKey: resolvedGeminiKey, imageKey: resolvedImageKey } =
     resolveKeys(storedKeys, runtimeConfig);
 
-  const hasResolvableKey = Boolean(resolvedGeminiKey);
+  const hasResolvableKey = Boolean(resolvedGeminiKey || runtimeConfig.hasServerGeminiKey);
+  const hasResolvableImageKey = Boolean(
+    resolvedImageKey || runtimeConfig.hasServerImageKey || runtimeConfig.hasServerGeminiKey
+  );
 
   return {
     storedKeys,
@@ -117,6 +123,9 @@ export function useApiKeys(): UseApiKeysReturn {
     resolvedGeminiKey,
     resolvedImageKey,
     hasResolvableKey,
+    hasResolvableImageKey,
+    hasServerGeminiKey: runtimeConfig.hasServerGeminiKey,
+    hasServerImageKey: runtimeConfig.hasServerImageKey,
     isRuntimeConfigLoading
   };
 }
