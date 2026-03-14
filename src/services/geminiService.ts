@@ -1,10 +1,10 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import { InterviewData, SlideData, ResearchPacket, SourceRef } from '../demoData';
+import { InterviewData, SlideData, ResearchPacket, SourceRef, PageKind } from '../demoData';
 import { getDesignToken } from '../designTokens';
 import { compileAllSlides } from '../slides/layoutCompiler';
 import { sanitizeAllSlides } from '../slides/sanitize';
 import { buildRichBrief, formatRichBriefNarrative, type RichBriefContext } from '../interview/brief';
-import { buildStructureGuide, buildQualityConstraints, buildAntiPatternWarnings, buildPageRequirementsTable } from './promptTemplates';
+import { buildStructureGuide, buildQualityConstraints, buildAntiPatternWarnings, buildPageRequirementsTable, SLIDE_STRUCTURES } from './promptTemplates';
 import type { AnswerEntry, InterviewFieldId } from '../interview/schema';
 
 /**
@@ -83,8 +83,289 @@ const slideStructureSchema = {
 };
 
 const RESEARCH_MODEL = 'gemini-3-flash-preview';
-const STRUCTURE_MODEL = 'gemini-3-pro-preview';
+const STRUCTURE_MODEL = 'gemini-3-flash-preview';
 const BACKGROUND_IMAGE_MODEL = 'gemini-3-pro-image-preview';
+const STRUCTURE_SCHEMA_TIMEOUT_MS = 18000;
+const STRUCTURE_FALLBACK_TIMEOUT_MS = 10000;
+const BACKGROUND_TIMEOUT_MS = 20000;
+
+function abortAfter(ms: number): { signal: AbortSignal; cleanup: () => void } {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error(`Timed out after ${ms}ms`)), ms);
+  return {
+    signal: controller.signal,
+    cleanup: () => clearTimeout(timer),
+  };
+}
+
+function extractJsonPayload(text: string): string {
+  const trimmed = text.trim();
+  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  return fencedMatch?.[1]?.trim() || trimmed;
+}
+
+function parseSlideResponse(text: string): SlideData[] {
+  const jsonPayload = extractJsonPayload(text);
+  const parsed = JSON.parse(jsonPayload);
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    throw new Error('スライド構成の生成結果が空でした');
+  }
+  return parsed as SlideData[];
+}
+
+async function requestStructuredSlides(
+  ai: GoogleGenAI,
+  prompt: string,
+  useSchema: boolean,
+  timeoutMs: number,
+): Promise<SlideData[]> {
+  const { signal, cleanup } = abortAfter(timeoutMs);
+
+  try {
+    const response = await ai.models.generateContent({
+      model: STRUCTURE_MODEL,
+      contents: prompt,
+      config: {
+        abortSignal: signal,
+        responseMimeType: 'application/json',
+        ...(useSchema ? { responseSchema: slideStructureSchema } : {}),
+        temperature: useSchema ? 0.4 : 0.2,
+        maxOutputTokens: 4096,
+      }
+    });
+
+    const text = response.text?.trim() || '';
+    if (!text) {
+      throw new Error('モデルからスライド構成が返されませんでした');
+    }
+
+    return parseSlideResponse(text);
+  } finally {
+    cleanup();
+  }
+}
+
+function truncateText(value: string, maxLength: number): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trim()}…`;
+}
+
+function collectFollowUpLabels(
+  followUpAnswers?: Array<{ parentFieldId: string; label: string; promptHint?: string }>
+): Record<string, string[]> {
+  const byField: Record<string, string[]> = {};
+  for (const answer of followUpAnswers || []) {
+    const label = answer.label.trim();
+    if (!label) {
+      continue;
+    }
+    byField[answer.parentFieldId] ??= [];
+    byField[answer.parentFieldId].push(label);
+  }
+  return byField;
+}
+
+function createEyebrow(pageNumber: number, label: string): string {
+  return `${String(pageNumber).padStart(2, '0')} / ${label}`;
+}
+
+function getFallbackStructure(count: number): PageKind[] {
+  if (SLIDE_STRUCTURES[count]) {
+    return SLIDE_STRUCTURES[count];
+  }
+
+  if (count <= 3) {
+    return SLIDE_STRUCTURES[3];
+  }
+
+  if (count === 4) {
+    return ['cover', 'executive-summary', 'comparison', 'decision-cta'];
+  }
+
+  const kinds: PageKind[] = ['cover', 'executive-summary', 'problem-analysis'];
+  const remaining = count - 4;
+  for (let index = 0; index < remaining; index += 1) {
+    const isLastMiddle = index === remaining - 1;
+    kinds.push(isLastMiddle && count >= 7 ? 'roadmap' : 'deep-dive');
+  }
+  kinds.push('decision-cta');
+  return kinds;
+}
+
+function buildFallbackKpis(packet?: ResearchPacket): { label: string; value: string; unit: string }[] {
+  if (!packet) {
+    return [];
+  }
+  return packet.claims
+    .filter(claim => claim.metricValue)
+    .slice(0, 2)
+    .map((claim, index) => ({
+      label: truncateText(claim.text.replace(/\s+/g, ' '), 20) || `指標${index + 1}`,
+      value: claim.metricValue || '',
+      unit: claim.metricUnit || '',
+    }));
+}
+
+function buildFallbackBgPrompt(theme: string, keyMessage: string, pageKind: PageKind): string {
+  const subject = theme.trim() || 'business strategy';
+  const focus = keyMessage.trim() || 'decision making';
+  return `abstract professional presentation background, ${subject}, ${focus}, ${pageKind}, blue and graphite palette, no text, 16:9`;
+}
+
+function buildFallbackSlides(
+  interviewData: Partial<InterviewData>,
+  count: number,
+  researchPacket?: ResearchPacket,
+  followUpAnswers?: Array<{ parentFieldId: string; label: string; promptHint?: string }>,
+): SlideData[] {
+  const theme = interviewData.theme?.trim() || '未指定テーマ';
+  const audience = interviewData.targetAudience?.trim() || '関係者';
+  const keyMessage = interviewData.keyMessage?.trim() || '判断材料を整理する';
+  const supplementary = interviewData.supplementary?.trim() || '';
+  const followUps = collectFollowUpLabels(followUpAnswers);
+  const themeFocus = followUps.theme?.[0] || '';
+  const audienceDetail = followUps.targetAudience?.[0] || '';
+  const messageDetail = followUps.keyMessage?.[0] || '';
+  const kpis = buildFallbackKpis(researchPacket);
+  const evidenceRefs = (researchPacket?.claims || []).slice(0, 2).map(claim => claim.id);
+  const sourceNote = researchPacket?.sources?.length ? buildSourceNote(researchPacket.sources.slice(0, 2)) : '';
+  const structure = getFallbackStructure(count);
+  const baseHeadline = truncateText(themeFocus || theme.replace(/について/g, '').trim(), 20) || '重点論点を整理する';
+  const summaryFacts = [
+    truncateText(`${audience}${audienceDetail ? `向けに${audienceDetail}` : '向け'}の判断材料を整理`, 36),
+    truncateText(messageDetail || keyMessage, 36),
+    truncateText(researchPacket?.summary || `${theme}の現状と優先課題を分かりやすく整理`, 36),
+  ].filter(Boolean);
+
+  return structure.map((pageKind, index) => {
+    const pageNumber = index + 1;
+    const shared = {
+      id: `slide-${pageNumber}`,
+      pageNumber,
+      title: `${theme} - ${pageKind}`,
+      imageUrl: '',
+      bgPrompt: buildFallbackBgPrompt(theme, keyMessage, pageKind),
+      elements: [],
+      pageKind,
+      sourceNote,
+      evidenceRefs,
+      sources: researchPacket?.sources || [],
+    } satisfies SlideData;
+
+    switch (pageKind) {
+      case 'cover':
+        return {
+          ...shared,
+          eyebrow: createEyebrow(pageNumber, '課題設定'),
+          headline: truncateText(`${baseHeadline}を具体化する`, 18),
+          subheadline: truncateText(messageDetail || keyMessage || `${theme}の要点を一枚で把握する`, 24),
+          kpis,
+        };
+      case 'executive-summary':
+        return {
+          ...shared,
+          eyebrow: createEyebrow(pageNumber, '要点整理'),
+          headline: truncateText('結論と判断軸を先に示す', 18),
+          facts: summaryFacts.slice(0, 3),
+          kpis,
+        };
+      case 'problem-analysis':
+        return {
+          ...shared,
+          eyebrow: createEyebrow(pageNumber, '現状分析'),
+          headline: truncateText('現状の詰まりどころを特定', 18),
+          facts: [
+            truncateText(`${theme}は論点が広く、方針がぼやけやすい`, 36),
+          ],
+          kpis: kpis.slice(0, 1),
+          sections: [
+            {
+              title: '見えている課題',
+              bullets: [
+                truncateText(audienceDetail || `${audience}ごとに見たい情報が違う`, 28),
+                truncateText(messageDetail || '結論が抽象的だと意思決定につながりにくい', 28),
+              ],
+            },
+            {
+              title: '今回そろえる論点',
+              bullets: [
+                truncateText(themeFocus || '何を優先するテーマなのかを定義する', 28),
+                truncateText('次に取るべき判断と行動を明示する', 28),
+              ],
+            },
+          ],
+        };
+      case 'comparison':
+        return {
+          ...shared,
+          eyebrow: createEyebrow(pageNumber, '比較判断'),
+          headline: truncateText('現状維持より見直しが有利', 18),
+          comparisonRows: [
+            { topic: '論点の明確さ', current: '判断軸が分散', future: '重点テーマを明示' },
+            { topic: '意思決定のしやすさ', current: '結論が抽象的', future: truncateText(messageDetail || keyMessage, 18) },
+            { topic: '実行イメージ', current: '次の一手が曖昧', future: '優先施策と順序を提示' },
+          ],
+        };
+      case 'roadmap':
+        return {
+          ...shared,
+          eyebrow: createEyebrow(pageNumber, '実行計画'),
+          headline: truncateText('3段階で具体化する', 18),
+          roadmapPhases: [
+            { phase: 1, title: '前提整理', bullets: ['対象読者と論点を固定', '使う数値根拠を確定'] },
+            { phase: 2, title: '優先順位化', bullets: ['比較軸を明示', '打ち手候補を整理'] },
+            { phase: 3, title: '実行判断', bullets: ['次のアクションを決定', '社内共有に展開'] },
+          ],
+        };
+      case 'decision-cta':
+        return {
+          ...shared,
+          eyebrow: createEyebrow(pageNumber, '次の判断'),
+          headline: truncateText('次に決めることを明確化', 18),
+          actionItems: [
+            truncateText(themeFocus || '優先するテーマを一つに定める', 28),
+            truncateText(messageDetail || '判断に必要な比較軸をそろえる', 28),
+            truncateText('実行責任者と期限を決める', 28),
+          ],
+          takeaways: [
+            truncateText(`${theme}は論点整理だけで説得力が上がる`, 28),
+            truncateText(`${audience}が判断しやすい構成へ寄せる`, 28),
+            truncateText(supplementary || '次のアクションまで示して終える', 28),
+          ],
+        };
+      case 'deep-dive':
+      default:
+        return {
+          ...shared,
+          eyebrow: createEyebrow(pageNumber, '詳細検討'),
+          headline: truncateText('重点論点を具体策に落とす', 18),
+          facts: [
+            truncateText(themeFocus || `${theme}の焦点を一つに絞る`, 32),
+          ],
+          kpis: kpis.slice(0, 1),
+          sections: [
+            {
+              title: '見るべきポイント',
+              bullets: [
+                truncateText(messageDetail || keyMessage, 28),
+                truncateText(audienceDetail || `${audience}に合わせて説明粒度を変える`, 28),
+              ],
+            },
+            {
+              title: 'スライドで示す内容',
+              bullets: [
+                truncateText('比較・根拠・実行案を一貫させる', 28),
+                truncateText('結論を一文で言い切る', 28),
+              ],
+            },
+          ],
+        };
+    }
+  });
+}
 
 /**
  * Build an evidence context block for the generation prompt.
@@ -206,18 +487,23 @@ ${antiPatterns}
 
 
   try {
-    const response = await ai.models.generateContent({
-      model: STRUCTURE_MODEL,
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: slideStructureSchema,
-        temperature: 0.7,
+    let rawSlides: SlideData[];
+    try {
+      rawSlides = await requestStructuredSlides(ai, prompt, true, STRUCTURE_SCHEMA_TIMEOUT_MS);
+    } catch (schemaError) {
+      console.warn('Structured schema generation failed, retrying without schema:', schemaError);
+      try {
+        rawSlides = await requestStructuredSlides(
+          ai,
+          `${prompt}\n\n### 出力形式の最終指示\n- JSON配列のみを返す\n- Markdownや説明文は不要\n- 必ず1枚以上のslideを返す`,
+          false,
+          STRUCTURE_FALLBACK_TIMEOUT_MS,
+        );
+      } catch (fallbackError) {
+        console.warn('JSON-only generation failed, using deterministic fallback deck:', fallbackError);
+        rawSlides = buildFallbackSlides(interviewData, count, researchPacket, followUpAnswers);
       }
-    });
-
-    const jsonStr = response.text?.trim() || "[]";
-    const rawSlides: SlideData[] = JSON.parse(jsonStr);
+    }
 
     // Attach research sources to slides that reference evidence
     const slidesWithSources = rawSlides.map(slide => {
@@ -260,26 +546,32 @@ export async function generateBackgroundImage(prompt: string, apiKey: string): P
   const ai = new GoogleGenAI({ apiKey });
 
   try {
-    const response = await ai.models.generateContent({
-      model: BACKGROUND_IMAGE_MODEL,
-      contents: {
-        parts: [{ text: prompt + ", abstract, professional business presentation background, no text, high quality, 16:9 aspect ratio" }]
-      },
-      config: {
-        imageConfig: {
-          aspectRatio: "16:9",
-          imageSize: "1K"
+    const { signal, cleanup } = abortAfter(BACKGROUND_TIMEOUT_MS);
+    try {
+      const response = await ai.models.generateContent({
+        model: BACKGROUND_IMAGE_MODEL,
+        contents: {
+          parts: [{ text: prompt + ", abstract, professional business presentation background, no text, high quality, 16:9 aspect ratio" }]
+        },
+        config: {
+          abortSignal: signal,
+          imageConfig: {
+            aspectRatio: "16:9",
+            imageSize: "1K"
+          }
+        }
+      });
+
+      for (const part of response.candidates?.[0]?.content?.parts || []) {
+        if (part.inlineData) {
+          return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
         }
       }
-    });
 
-    for (const part of response.candidates?.[0]?.content?.parts || []) {
-      if (part.inlineData) {
-        return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-      }
+      throw new Error("No image data found in response");
+    } finally {
+      cleanup();
     }
-
-    throw new Error("No image data found in response");
   } catch (error) {
     console.error("Error generating background image:", error);
     throw error;
