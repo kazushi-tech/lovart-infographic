@@ -1,106 +1,191 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
-import type { AdaptiveBriefContext, AdaptiveFieldId, AdaptiveOptionsResult, StepOption } from '../interview/schema';
+import { useState, useCallback, useRef } from 'react';
+import type { AdaptiveBriefContext, AdaptiveFieldId, StepOption } from '../interview/schema';
 import { fetchAdaptiveOptions, prefetchAllAdaptiveOptions, clearAdaptiveCache } from '../services/adaptiveInterviewService';
 
+interface AdaptiveOptionsEntry {
+  options: StepOption[];
+  isLoading: boolean;
+  isCached: boolean;
+  error: string | null;
+}
+
 export interface AdaptiveOptionsState {
-  [fieldId: string]: {
-    options: StepOption[];
-    isLoading: boolean;
-    isCached: boolean;
-    error: string | null;
-  } | undefined;
+  [stateKey: string]: AdaptiveOptionsEntry | undefined;
+}
+
+const ADAPTIVE_FIELDS: AdaptiveFieldId[] = ['targetAudience', 'keyMessage', 'tone', 'supplementary'];
+
+function getContextKey(context: AdaptiveBriefContext): string {
+  return [context.theme.trim(), context.styleId?.trim() ?? '', context.slideCount?.trim() ?? ''].join('::');
+}
+
+function getStateKey(fieldId: AdaptiveFieldId, context: AdaptiveBriefContext): string {
+  return `${fieldId}::${getContextKey(context)}`;
 }
 
 export function useAdaptiveOptions() {
   const [optionsState, setOptionsState] = useState<AdaptiveOptionsState>({});
-  const isPrefetchingRef = useRef(false);
+  const currentContextKeyRef = useRef('');
+  const requestIdRef = useRef(0);
+  const stateRequestIdsRef = useRef<Record<string, number>>({});
+
+  const readState = useCallback((fieldId: AdaptiveFieldId, context?: AdaptiveBriefContext | null) => {
+    if (!context) return undefined;
+    return optionsState[getStateKey(fieldId, context)];
+  }, [optionsState]);
 
   /**
    * Get options for a specific field.
    */
-  const getOptions = useCallback((fieldId: AdaptiveFieldId): StepOption[] => {
-    const state = optionsState[fieldId];
-    return state?.options || [];
-  }, [optionsState]);
+  const getOptions = useCallback((fieldId: AdaptiveFieldId, context?: AdaptiveBriefContext | null): StepOption[] => {
+    return readState(fieldId, context)?.options || [];
+  }, [readState]);
 
   /**
    * Check if options are loading for a field.
    */
-  const isLoading = useCallback((fieldId: AdaptiveFieldId): boolean => {
-    return optionsState[fieldId]?.isLoading || false;
-  }, [optionsState]);
+  const isLoading = useCallback((fieldId: AdaptiveFieldId, context?: AdaptiveBriefContext | null): boolean => {
+    return readState(fieldId, context)?.isLoading || false;
+  }, [readState]);
 
   /**
    * Check if options are cached for a field.
    */
-  const isCached = useCallback((fieldId: AdaptiveFieldId): boolean => {
-    return optionsState[fieldId]?.isCached || false;
-  }, [optionsState]);
+  const isCached = useCallback((fieldId: AdaptiveFieldId, context?: AdaptiveBriefContext | null): boolean => {
+    return readState(fieldId, context)?.isCached || false;
+  }, [readState]);
 
   /**
    * Get error message for a field.
    */
-  const getError = useCallback((fieldId: AdaptiveFieldId): string | null => {
-    return optionsState[fieldId]?.error || null;
-  }, [optionsState]);
+  const getError = useCallback((fieldId: AdaptiveFieldId, context?: AdaptiveBriefContext | null): string | null => {
+    return readState(fieldId, context)?.error || null;
+  }, [readState]);
 
   /**
    * Fetch options for a single field.
    */
   const fetchFieldOptions = useCallback(async (fieldId: AdaptiveFieldId, context: AdaptiveBriefContext) => {
-    // Check if already loading or recently fetched
-    const existing = optionsState[fieldId];
-    if (existing?.isLoading) return;
+    const contextKey = getContextKey(context);
+    const stateKey = getStateKey(fieldId, context);
+    const requestId = ++requestIdRef.current;
 
-    // Set loading state
+    currentContextKeyRef.current = contextKey;
+    stateRequestIdsRef.current[stateKey] = requestId;
     setOptionsState(prev => ({
       ...prev,
-      [fieldId]: { options: prev[fieldId]?.options || [], isLoading: true, isCached: false, error: null },
+      [stateKey]: {
+        options: prev[stateKey]?.options || [],
+        isLoading: true,
+        isCached: prev[stateKey]?.isCached || false,
+        error: null,
+      },
     }));
 
     try {
       const result = await fetchAdaptiveOptions(fieldId, context);
+      if (currentContextKeyRef.current !== contextKey || stateRequestIdsRef.current[stateKey] !== requestId) {
+        return;
+      }
       setOptionsState(prev => ({
         ...prev,
-        [fieldId]: { options: result.options, isLoading: false, isCached: result.isCached, error: null },
+        [stateKey]: { options: result.options, isLoading: false, isCached: result.isCached, error: null },
       }));
-    } catch (error) {
+    } catch {
+      if (currentContextKeyRef.current !== contextKey || stateRequestIdsRef.current[stateKey] !== requestId) {
+        return;
+      }
       setOptionsState(prev => ({
         ...prev,
-        [fieldId]: { options: [], isLoading: false, isCached: false, error: 'オプションの取得に失敗しました' },
+        [stateKey]: {
+          options: prev[stateKey]?.options || [],
+          isLoading: false,
+          isCached: false,
+          error: 'オプションの取得に失敗しました',
+        },
       }));
     }
-  }, [optionsState]);
+  }, []);
 
   /**
    * Prefetch options for all adaptive fields after slideCount is answered.
    */
   const prefetchAll = useCallback(async (context: AdaptiveBriefContext) => {
-    if (isPrefetchingRef.current) return;
-    isPrefetchingRef.current = true;
+    const contextKey = getContextKey(context);
+    const requestId = ++requestIdRef.current;
+
+    currentContextKeyRef.current = contextKey;
+    for (const fieldId of ADAPTIVE_FIELDS) {
+      stateRequestIdsRef.current[getStateKey(fieldId, context)] = requestId;
+    }
+
+    setOptionsState(prev => {
+      const nextState = { ...prev };
+      for (const fieldId of ADAPTIVE_FIELDS) {
+        const stateKey = getStateKey(fieldId, context);
+        nextState[stateKey] = {
+          options: prev[stateKey]?.options || [],
+          isLoading: true,
+          isCached: prev[stateKey]?.isCached || false,
+          error: null,
+        };
+      }
+      return nextState;
+    });
 
     try {
       const results = await prefetchAllAdaptiveOptions(context);
+      if (currentContextKeyRef.current !== contextKey) {
+        return;
+      }
 
-      // Update state with all fetched results
       setOptionsState(prev => {
         const newState = { ...prev };
-        for (const [fieldId, result] of Object.entries(results)) {
+        for (const fieldId of ADAPTIVE_FIELDS) {
+          const stateKey = getStateKey(fieldId, context);
+          if (stateRequestIdsRef.current[stateKey] !== requestId) {
+            continue;
+          }
+          const result = results[fieldId];
           if (result) {
-            newState[fieldId] = {
+            newState[stateKey] = {
               options: result.options,
               isLoading: false,
               isCached: result.isCached,
               error: null,
+            };
+          } else {
+            newState[stateKey] = {
+              options: prev[stateKey]?.options || [],
+              isLoading: false,
+              isCached: false,
+              error: 'オプションの取得に失敗しました',
             };
           }
         }
         return newState;
       });
     } catch (error) {
+      if (currentContextKeyRef.current !== contextKey) {
+        return;
+      }
+      setOptionsState(prev => {
+        const nextState = { ...prev };
+        for (const fieldId of ADAPTIVE_FIELDS) {
+          const stateKey = getStateKey(fieldId, context);
+          if (stateRequestIdsRef.current[stateKey] !== requestId) {
+            continue;
+          }
+          nextState[stateKey] = {
+            options: prev[stateKey]?.options || [],
+            isLoading: false,
+            isCached: false,
+            error: 'オプションの取得に失敗しました',
+          };
+        }
+        return nextState;
+      });
       console.warn('Prefetch failed:', error);
-    } finally {
-      isPrefetchingRef.current = false;
     }
   }, []);
 
@@ -109,6 +194,9 @@ export function useAdaptiveOptions() {
    */
   const clearCache = useCallback(() => {
     clearAdaptiveCache();
+    currentContextKeyRef.current = '';
+    requestIdRef.current = 0;
+    stateRequestIdsRef.current = {};
     setOptionsState({});
   }, []);
 

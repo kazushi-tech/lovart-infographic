@@ -16,6 +16,7 @@ import { useApiKeys } from '../hooks/useApiKeys';
 import { useDeckHistory } from '../hooks/useDeckHistory';
 import { useAdaptiveOptions } from '../hooks/useAdaptiveOptions';
 import { AppScreen, AnswerEntry, InterviewFieldId, INTERVIEW_STEPS } from '../interview/schema';
+import type { AdaptiveBriefContext, AdaptiveFieldId } from '../interview/schema';
 import type { FollowUpAnswerEntry } from '../interview/state';
 import { assessAnswerQuality } from '../interview/answerQuality';
 import { generateFollowUpQuestions } from '../services/adaptiveInterviewService';
@@ -53,6 +54,16 @@ export default function AppShell() {
   const [researchPacket, setResearchPacket] = useState<ResearchPacket | undefined>();
 
   const briefDraft = useMemo(() => buildBriefDraft(wizardState.answers), [wizardState.answers]);
+  const adaptiveContext = useMemo<AdaptiveBriefContext | null>(() => {
+    if (!briefDraft.theme || !briefDraft.slideCount) {
+      return null;
+    }
+    return {
+      theme: briefDraft.theme,
+      styleId: briefDraft.styleId,
+      slideCount: briefDraft.slideCount,
+    };
+  }, [briefDraft.slideCount, briefDraft.styleId, briefDraft.theme]);
 
   // Bridge: legacy interviewData for geminiService / BriefSummaryCard
   const interviewData = useMemo(() => ({
@@ -145,6 +156,7 @@ export default function AppShell() {
       parentStepIndex?: number;
       resumeStepIndex?: number;
       returnPhase?: 'collecting' | 'review';
+      currentFollowUpId?: string;
     }
   ) => {
     const quality = assessAnswerQuality(nextAnswers, nextFollowUpAnswers);
@@ -154,8 +166,10 @@ export default function AppShell() {
     }
 
     const theme = nextAnswers.theme?.value || nextAnswers.theme?.label || '';
-    const packets = generateFollowUpQuestions(theme, { [fieldId]: severity });
-    const packet = packets.find(item => item.parentFieldId === fieldId);
+    const packets = generateFollowUpQuestions(theme, { [fieldId]: severity }, nextFollowUpAnswers);
+    const packet = packets.find(item =>
+      item.parentFieldId === fieldId && item.id !== options?.currentFollowUpId
+    );
     if (!packet) {
       return false;
     }
@@ -196,7 +210,19 @@ export default function AppShell() {
   };
 
   const handleFollowUpCommit = (answer: FollowUpAnswerEntry) => {
+    const updatedFollowUpAnswers = [
+      ...wizardState.followUpAnswers.filter(existing => existing.followUpId !== answer.followUpId),
+      answer,
+    ];
+
     dispatch({ type: 'answerFollowUp', answer });
+
+    openFollowUpForField(answer.parentFieldId, wizardState.answers, updatedFollowUpAnswers, {
+      parentStepIndex: wizardState.followUpParentStepIndex ?? wizardState.activeStepIndex,
+      resumeStepIndex: wizardState.followUpResumeStepIndex ?? wizardState.activeStepIndex,
+      returnPhase: wizardState.followUpReturnPhase ?? 'collecting',
+      currentFollowUpId: answer.followUpId,
+    });
   };
 
   const handleFollowUpSkip = () => {
@@ -247,16 +273,16 @@ export default function AppShell() {
   }, [wizardState.phase, screen]);
 
   useEffect(() => {
-    if (!briefDraft.theme || !briefDraft.slideCount) {
+    if (!adaptiveContext) {
       return;
     }
 
-    void prefetchAdaptiveOptions({
-      theme: briefDraft.theme,
-      styleId: briefDraft.styleId,
-      slideCount: briefDraft.slideCount,
-    });
-  }, [briefDraft.slideCount, briefDraft.styleId, briefDraft.theme, prefetchAdaptiveOptions]);
+    void prefetchAdaptiveOptions(adaptiveContext);
+  }, [adaptiveContext, prefetchAdaptiveOptions]);
+
+  const isAdaptiveLoadingForCurrentContext = useCallback((fieldId: AdaptiveFieldId) => {
+    return adaptiveContext ? isAdaptiveLoading(fieldId, adaptiveContext) : false;
+  }, [adaptiveContext, isAdaptiveLoading]);
 
   // Editor-only: handle post-generation messages
   const handleSendMessage = (text: string) => {
@@ -533,12 +559,12 @@ export default function AppShell() {
               isGenerateDisabled={isRuntimeConfigLoading}
               isGenerateLoading={isGenerating}
               adaptiveOptions={{
-                targetAudience: getAdaptiveOptions('targetAudience'),
-                keyMessage: getAdaptiveOptions('keyMessage'),
-                tone: getAdaptiveOptions('tone'),
-                supplementary: getAdaptiveOptions('supplementary'),
+                targetAudience: adaptiveContext ? getAdaptiveOptions('targetAudience', adaptiveContext) : [],
+                keyMessage: adaptiveContext ? getAdaptiveOptions('keyMessage', adaptiveContext) : [],
+                tone: adaptiveContext ? getAdaptiveOptions('tone', adaptiveContext) : [],
+                supplementary: adaptiveContext ? getAdaptiveOptions('supplementary', adaptiveContext) : [],
               }}
-              isAdaptiveLoading={isAdaptiveLoading}
+              isAdaptiveLoading={isAdaptiveLoadingForCurrentContext}
             />
             {/* Loading Overlay */}
             {(screen === 'generating' || isGenerating) && (

@@ -73,9 +73,9 @@ export function interviewWizardReducer(
   switch (action.type) {
     case 'answer': {
       const newAnswers = { ...state.answers, [action.fieldId]: action.entry };
-      const remainingFollowUps = state.followUpAnswers.filter(
-        answer => answer.parentFieldId !== action.fieldId
-      );
+      const remainingFollowUps = action.fieldId === 'theme'
+        ? []
+        : state.followUpAnswers.filter(answer => answer.parentFieldId !== action.fieldId);
       const nextIndex = state.activeStepIndex + 1;
       const isLastStep = nextIndex >= INTERVIEW_STEPS.length;
       return {
@@ -174,7 +174,7 @@ export function interviewWizardReducer(
     case 'answerFollowUp': {
       const newFollowUpAnswers = [
         ...state.followUpAnswers.filter(
-          a => a.followUpId !== action.answer.followUpId && a.parentFieldId !== action.answer.parentFieldId
+          a => a.followUpId !== action.answer.followUpId
         ),
         action.answer,
       ];

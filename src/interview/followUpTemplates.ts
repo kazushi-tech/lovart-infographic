@@ -18,6 +18,12 @@ export interface FollowUpOption {
   promptHint?: string;
 }
 
+export interface ExistingFollowUpResolution {
+  followUpId: string;
+  parentFieldId: InterviewFieldId;
+  label: string;
+}
+
 export type ThemeCategory =
   | 'workstyle_remote'
   | 'ai_dx'
@@ -233,6 +239,134 @@ const THEME_FOLLOWUPS: Record<ThemeCategory, Partial<Record<InterviewFieldId, Fo
   },
 };
 
+const GENERAL_AUDIENCE_CONTEXT_FOLLOWUP: FollowUpStep = {
+  id: 'fu-gen-audience-context',
+  parentFieldId: 'targetAudience',
+  question: 'その読者は、どんな場面でこの資料を使いますか？',
+  reason: '役割だけでは広いため、利用シーンまで絞ると訴求が鋭くなります',
+  options: [
+    { id: 'gen-audience-budget', label: '予算判断・方針決定の場で使う', promptHint: '意思決定支援・投資判断を重視' },
+    { id: 'gen-audience-approval', label: '社内稟議・導入検討の場で使う', promptHint: '比較材料・導入理由を重視' },
+    { id: 'gen-audience-ops', label: '現場運用・教育展開の場で使う', promptHint: '実務手順・定着施策を重視' },
+    { id: 'gen-audience-proposal', label: '社外提案・顧客説明の場で使う', promptHint: '提案価値・説得材料を重視' },
+  ],
+  fallbackPrompt: 'その読者が資料を使う場面を入力してください',
+};
+
+const GENERAL_MESSAGE_OUTCOME_FOLLOWUP: FollowUpStep = {
+  id: 'fu-gen-message-outcome',
+  parentFieldId: 'keyMessage',
+  question: 'その資料で、最終的に何をはっきり伝えたいですか？',
+  reason: '「判断してほしい」だけでは広いため、結論の中身まで絞り込みます',
+  options: [
+    { id: 'gen-outcome-cost', label: 'コスト削減や生産性向上の根拠を示したい', promptHint: '費用対効果・改善効果を示す構成' },
+    { id: 'gen-outcome-growth', label: '売上拡大や成長機会を示したい', promptHint: '成長余地・収益インパクトを示す構成' },
+    { id: 'gen-outcome-risk', label: 'リスク低減や安全性向上を示したい', promptHint: 'リスク比較・予防策を示す構成' },
+    { id: 'gen-outcome-choice', label: 'どの選択肢を採るべきかを示したい', promptHint: '比較・意思決定支援を重視した構成' },
+  ],
+  fallbackPrompt: '最終的に伝えたい結論の中身を入力してください',
+};
+
+const KEY_MESSAGE_ACTION_REFINEMENTS: Partial<Record<ThemeCategory, FollowUpStep>> = {
+  ai_dx: {
+    id: 'fu-ai-message-action',
+    parentFieldId: 'keyMessage',
+    question: 'その成果指標を踏まえて、相手に何を決めてほしいですか？',
+    reason: '成果指標だけでは結論になり切らないため、次の判断や行動まで確定します',
+    options: [
+      { id: 'ai-action-priority', label: '優先業務から AI 導入を始めるべき', promptHint: '導入優先順位・スモールスタートを重視' },
+      { id: 'ai-action-budget', label: '予算承認を取り、PoC を進めるべき', promptHint: '予算判断・PoC 開始を重視' },
+      { id: 'ai-action-scale', label: '成果の出た施策を全社展開すべき', promptHint: '横展開・ロードマップを重視' },
+      { id: 'ai-action-rebuild', label: '現場業務を AI 前提で再設計すべき', promptHint: '業務再設計・定着を重視' },
+    ],
+    fallbackPrompt: '相手に決めてほしい次の行動を入力してください',
+  },
+  hr_recruitment: {
+    id: 'fu-hr-message-action',
+    parentFieldId: 'keyMessage',
+    question: 'その強みを踏まえて、採用活動をどう変えるべきですか？',
+    reason: '魅力の列挙だけでは弱いため、採用上の打ち手まで具体化します',
+    options: [
+      { id: 'hr-action-evp', label: '候補者に刺さる EVP を前面に出すべき', promptHint: '訴求軸の再整理を重視' },
+      { id: 'hr-action-funnel', label: '応募から選考移行までの訴求を見直すべき', promptHint: '応募率・選考移行率改善を重視' },
+      { id: 'hr-action-brand', label: '採用ブランドの見せ方を統一すべき', promptHint: 'ブランドメッセージ統一を重視' },
+      { id: 'hr-action-proof', label: '社員の声や実績で信頼性を補強すべき', promptHint: '事例・証拠で裏付ける構成' },
+    ],
+    fallbackPrompt: '採用活動としてどう変えたいか入力してください',
+  },
+  training: {
+    id: 'fu-training-message-action',
+    parentFieldId: 'keyMessage',
+    question: 'その研修で、現場にどんな変化を起こしたいですか？',
+    reason: '習得テーマだけでは弱いため、受講後の現場行動まで詰めます',
+    options: [
+      { id: 'training-action-immediate', label: '受講後すぐ使う行動に落とし込むべき', promptHint: '即実践できる構成を重視' },
+      { id: 'training-action-standard', label: '守るべき標準手順を定着させるべき', promptHint: '標準化・運用定着を重視' },
+      { id: 'training-action-exercise', label: '講義より演習中心に切り替えるべき', promptHint: '演習・ワークショップ型を重視' },
+      { id: 'training-action-follow', label: '管理職フォローまで含めて設計すべき', promptHint: '現場フォロー・定着施策を重視' },
+    ],
+    fallbackPrompt: '研修後に起こしたい現場変化を入力してください',
+  },
+  compliance_risk: {
+    id: 'fu-risk-message-action',
+    parentFieldId: 'keyMessage',
+    question: 'そのリスクを踏まえて、次に何を徹底すべきですか？',
+    reason: 'リスクの種類だけでは弱いため、求める対応まで確定します',
+    options: [
+      { id: 'risk-action-priority', label: '優先度の高い対策から着手すべき', promptHint: '優先順位・対策計画を重視' },
+      { id: 'risk-action-rules', label: '現場が守る行動基準を明文化すべき', promptHint: '行動基準・チェックリストを重視' },
+      { id: 'risk-action-escalation', label: '報告・エスカレーション手順を徹底すべき', promptHint: '対応フロー・責任分担を重視' },
+      { id: 'risk-action-deadline', label: '期限付きで規制対応計画を決めるべき', promptHint: '期限管理・法令対応を重視' },
+    ],
+    fallbackPrompt: '次に徹底すべき対応を入力してください',
+  },
+};
+
+function getFieldFollowUpAnswers(
+  existingFollowUpAnswers: ExistingFollowUpResolution[],
+  fieldId: InterviewFieldId
+): ExistingFollowUpResolution[] {
+  return existingFollowUpAnswers.filter(answer => answer.parentFieldId === fieldId && answer.label.trim().length > 0);
+}
+
+function hasFollowUpId(
+  existingFollowUpAnswers: ExistingFollowUpResolution[],
+  followUpId: string
+): boolean {
+  return existingFollowUpAnswers.some(answer => answer.followUpId === followUpId);
+}
+
+function getRefinementFollowUp(
+  fieldId: InterviewFieldId,
+  category: ThemeCategory,
+  existingFollowUpAnswers: ExistingFollowUpResolution[]
+): FollowUpStep | null {
+  if (fieldId === 'targetAudience') {
+    if (category === 'general' && !hasFollowUpId(existingFollowUpAnswers, GENERAL_AUDIENCE_CONTEXT_FOLLOWUP.id)) {
+      return GENERAL_AUDIENCE_CONTEXT_FOLLOWUP;
+    }
+    return null;
+  }
+
+  if (fieldId !== 'keyMessage') {
+    return null;
+  }
+
+  if (category === 'general') {
+    if (!hasFollowUpId(existingFollowUpAnswers, GENERAL_MESSAGE_OUTCOME_FOLLOWUP.id)) {
+      return GENERAL_MESSAGE_OUTCOME_FOLLOWUP;
+    }
+    return null;
+  }
+
+  const refinement = KEY_MESSAGE_ACTION_REFINEMENTS[category];
+  if (!refinement || hasFollowUpId(existingFollowUpAnswers, refinement.id)) {
+    return null;
+  }
+
+  return refinement;
+}
+
 /**
  * Get follow-up questions for a field based on theme category and quality flags.
  * Returns null if no follow-up is needed.
@@ -241,7 +375,8 @@ export function getFollowUpForField(
   fieldId: InterviewFieldId,
   theme: string,
   currentValue: string,
-  hasFlagSeverity: QualitySeverity | null
+  hasFlagSeverity: QualitySeverity | null,
+  existingFollowUpAnswers: ExistingFollowUpResolution[] = []
 ): FollowUpStep | null {
   // Only generate follow-ups for flagged fields
   if (!hasFlagSeverity) return null;
@@ -249,6 +384,11 @@ export function getFollowUpForField(
   if (fieldId !== 'targetAudience' && fieldId !== 'keyMessage') return null;
 
   const category = classifyTheme(theme);
+  const fieldFollowUps = getFieldFollowUpAnswers(existingFollowUpAnswers, fieldId);
+  if (fieldFollowUps.length > 0) {
+    return getRefinementFollowUp(fieldId, category, fieldFollowUps);
+  }
+
   const template = THEME_FOLLOWUPS[category]?.[fieldId];
   if (!template) return null;
 
@@ -260,7 +400,8 @@ export function getFollowUpForField(
  */
 export function getAllFollowUps(
   theme: string,
-  fieldFlags: Record<InterviewFieldId, QualitySeverity | null>
+  fieldFlags: Record<InterviewFieldId, QualitySeverity | null>,
+  existingFollowUpAnswers: ExistingFollowUpResolution[] = []
 ): FollowUpStep[] {
   const steps: FollowUpStep[] = [];
   const fieldsToCheck: InterviewFieldId[] = ['targetAudience', 'keyMessage'];
@@ -268,7 +409,7 @@ export function getAllFollowUps(
   for (const fieldId of fieldsToCheck) {
     const severity = fieldFlags[fieldId];
     if (severity) {
-      const followUp = getFollowUpForField(fieldId, theme, '', severity);
+      const followUp = getFollowUpForField(fieldId, theme, '', severity, existingFollowUpAnswers);
       if (followUp) steps.push(followUp);
     }
   }

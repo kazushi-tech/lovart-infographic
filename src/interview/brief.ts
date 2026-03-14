@@ -3,6 +3,7 @@
 import type { BriefDraft, AnswerEntry, InterviewFieldId } from './schema';
 import type { ResearchPacket } from '../demoData';
 import type { BriefQualityResult, QualityFlag } from './answerQuality';
+import type { FollowUpAnswerEntry } from './state';
 
 export interface BriefSummaryItem {
   label: string;
@@ -68,16 +69,29 @@ export interface GenerationBriefSection {
  */
 export function buildGenerationBrief(
   brief: BriefDraft,
-  followUpHints: string[]
+  followUpHints: string[],
+  followUpAnswers: FollowUpAnswerEntry[] = []
 ): GenerationBriefSection[] {
   const sections: GenerationBriefSection[] = [];
+  const audienceResolution = followUpAnswers
+    .filter(answer => answer.parentFieldId === 'targetAudience' && answer.label.trim().length > 0)
+    .map(answer => answer.label.trim())
+    .join(' / ');
+  const messageResolution = followUpAnswers
+    .filter(answer => answer.parentFieldId === 'keyMessage' && answer.label.trim().length > 0)
+    .map(answer => answer.label.trim())
+    .join(' / ');
 
   // Who is this for?
   const audienceDetail = followUpHints.find(h => h.includes('視点') || h.includes('重視') || h.includes('訴求'));
   sections.push({
     label: '誰に向けた資料か',
     content: brief.targetAudience
-      ? `${brief.targetAudience}${audienceDetail ? `（${audienceDetail}）` : ''}`
+      ? [
+          brief.targetAudience,
+          audienceResolution ? `→ ${audienceResolution}` : '',
+          audienceDetail ? `→ ${audienceDetail}` : '',
+        ].filter(Boolean).join('\n')
       : '（未設定）',
     type: 'audience',
   });
@@ -87,7 +101,11 @@ export function buildGenerationBrief(
   sections.push({
     label: '相手に理解・判断・実行してほしいこと',
     content: brief.keyMessage
-      ? `${brief.keyMessage}${goalHint ? `\n→ ${goalHint}` : ''}`
+      ? [
+          brief.keyMessage,
+          messageResolution ? `→ ${messageResolution}` : '',
+          goalHint ? `→ ${goalHint}` : '',
+        ].filter(Boolean).join('\n')
       : '（未設定）',
     type: 'goal',
   });
@@ -183,13 +201,18 @@ export function buildRichBrief(
   const avoidItems: string[] = [];
 
   if (followUpAnswers) {
-    for (const fu of followUpAnswers) {
-      if (fu.parentFieldId === 'targetAudience' && fu.label) {
-        confirmedAudience = `${targetAudience}（${fu.label}）`;
-      }
-      if (fu.parentFieldId === 'keyMessage' && fu.label) {
-        confirmedMessage = `${keyMessage}（${fu.label}）`;
-      }
+    const audienceDetails = followUpAnswers
+      .filter(fu => fu.parentFieldId === 'targetAudience' && fu.label)
+      .map(fu => fu.label.trim());
+    const messageDetails = followUpAnswers
+      .filter(fu => fu.parentFieldId === 'keyMessage' && fu.label)
+      .map(fu => fu.label.trim());
+
+    if (audienceDetails.length > 0) {
+      confirmedAudience = `${targetAudience}（${audienceDetails.join(' / ')}）`;
+    }
+    if (messageDetails.length > 0) {
+      confirmedMessage = `${keyMessage}（${messageDetails.join(' / ')}）`;
     }
   }
 

@@ -42,7 +42,16 @@ const VAGUE_AUDIENCE_PATTERNS = [
 const WEAK_MESSAGE_PATTERNS = [
   /^.{1,10}$/, // too short
   /^(AIは重要|DXが必要|効率化したい|改善が必要|成長したい)$/,
+  /^(コスト削減と効率化|売上拡大と事業成長|新規事業とイノベーション|リスク管理とコンプライアンス)$/,
 ];
+
+const ACTIONABLE_MESSAGE_PATTERN = /(すべき|必要がある|ために|によって|することで|実現する|達成する|向上させる|推進する|見直す|改善する|変える|整備すべき|示すべき|進めるべき|再設計して|再設計する|可視化する|可視化すべき|定着させる|後押しする|踏み出してもらう|シフトする|安定させる)/;
+
+const MESSAGE_OUTCOME_PATTERN = /(削減|効率化|向上|改善|拡大|成長|防止|強化|最適化|定着|安定|加速|可視化|両立|競争優位|投資対効果|生産性|品質|売上|コスト|受注率|離職|エンゲージメント|運用|制度|ルール|ロードマップ|PoC|契約|予算承認|行動変容)/;
+
+function combineMessageValue(value: string, resolution: QualityFollowUpResolution | null): string {
+  return [value.trim(), resolution?.label.trim()].filter(Boolean).join(' / ');
+}
 
 function assessTheme(value: string): QualityFlag | null {
   if (!value.trim()) {
@@ -61,33 +70,55 @@ function assessTheme(value: string): QualityFlag | null {
   return null;
 }
 
-function getFollowUpResolution(
+function getFollowUpResolutions(
   followUpAnswers: QualityFollowUpResolution[],
   fieldId: InterviewFieldId
-): QualityFollowUpResolution | null {
-  const resolutions = followUpAnswers.filter(
+): QualityFollowUpResolution[] {
+  return followUpAnswers.filter(
     answer => answer.parentFieldId === fieldId && answer.label.trim().length > 0
   );
-  return resolutions.length > 0 ? resolutions[resolutions.length - 1] : null;
 }
 
-function isGenericAudienceResolution(resolution: QualityFollowUpResolution | null): boolean {
-  if (!resolution) return true;
-  return /^(意思決定者|推進者|実務担当者)/.test(resolution.label);
+function combineFollowUpResolution(
+  resolutions: QualityFollowUpResolution[],
+  fieldId: InterviewFieldId
+): QualityFollowUpResolution | null {
+  if (resolutions.length === 0) {
+    return null;
+  }
+
+  const promptHints = resolutions
+    .map(resolution => resolution.promptHint)
+    .filter((hint): hint is string => !!hint);
+
+  return {
+    parentFieldId: fieldId,
+    label: resolutions.map(resolution => resolution.label.trim()).join(' / '),
+    promptHint: promptHints.length > 0 ? promptHints.join(' / ') : undefined,
+  };
 }
 
-function isGenericMessageResolution(resolution: QualityFollowUpResolution | null): boolean {
-  if (!resolution) return true;
-  return /^(理解してほしい|判断・決定してほしい|行動を起こしてほしい)/.test(resolution.label);
+function isGenericAudienceResolution(resolutions: QualityFollowUpResolution[]): boolean {
+  if (resolutions.length === 0) return true;
+  return resolutions.every(resolution => /^(意思決定者|推進者|実務担当者)/.test(resolution.label));
 }
 
-function assessTargetAudience(value: string, resolution: QualityFollowUpResolution | null): QualityFlag | null {
+function isGenericMessageResolution(resolutions: QualityFollowUpResolution[]): boolean {
+  if (resolutions.length === 0) return true;
+  return resolutions.every(resolution => /^(理解してほしい|判断・決定してほしい|行動を起こしてほしい)/.test(resolution.label));
+}
+
+function assessTargetAudience(
+  value: string,
+  resolutions: QualityFollowUpResolution[],
+  resolution: QualityFollowUpResolution | null
+): QualityFlag | null {
   if (!value.trim()) {
     return { fieldId: 'targetAudience', severity: 'critical', message: 'ターゲットが未入力です' };
   }
   for (const pat of VAGUE_AUDIENCE_PATTERNS) {
     if (pat.test(value.trim())) {
-      if (resolution && !isGenericAudienceResolution(resolution)) {
+      if (resolution && !isGenericAudienceResolution(resolutions)) {
         return null;
       }
       return {
@@ -103,14 +134,23 @@ function assessTargetAudience(value: string, resolution: QualityFollowUpResoluti
   return null;
 }
 
-function assessKeyMessage(value: string, resolution: QualityFollowUpResolution | null): QualityFlag | null {
-  if (!value.trim()) {
+function assessKeyMessage(
+  value: string,
+  resolutions: QualityFollowUpResolution[],
+  resolution: QualityFollowUpResolution | null
+): QualityFlag | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
     return { fieldId: 'keyMessage', severity: 'critical', message: 'キーメッセージが未入力です' };
   }
+  const combinedValue = combineMessageValue(trimmed, resolution);
+  const hasAction = ACTIONABLE_MESSAGE_PATTERN.test(combinedValue);
+  const hasOutcome = MESSAGE_OUTCOME_PATTERN.test(combinedValue);
+
   for (const pat of WEAK_MESSAGE_PATTERNS) {
-    if (pat.test(value.trim())) {
-      if (resolution && !isGenericMessageResolution(resolution)) {
-        return null;
+    if (pat.test(trimmed)) {
+      if (resolution && !isGenericMessageResolution(resolutions) && (hasAction || hasOutcome)) {
+        break;
       }
       return {
         fieldId: 'keyMessage',
@@ -122,19 +162,25 @@ function assessKeyMessage(value: string, resolution: QualityFollowUpResolution |
       };
     }
   }
-  // Check if message lacks actionable intent
-  const hasAction = /[すべきる要必|ために|によって|することで|実現|達成|向上|推進]/.test(value);
-  if (!hasAction && value.length < 20) {
-    if (resolution && !isGenericMessageResolution(resolution)) {
-      return null;
-    }
+
+  if (!hasAction) {
+    return {
+      fieldId: 'keyMessage',
+      severity: combinedValue.length < 18 ? 'critical' : 'warning',
+      message: combinedValue.length < 18 ? 'キーメッセージが結論になっていません' : 'キーメッセージの行動喚起が弱いです',
+      suggestion: '相手に「何を理解・判断・実行してほしいか」が一文で分かる表現にしてください',
+    };
+  }
+
+  if (!hasOutcome) {
     return {
       fieldId: 'keyMessage',
       severity: 'warning',
-      message: 'キーメッセージに行動喚起が弱い可能性があります',
-      suggestion: '相手に「何を理解・判断・実行してほしいか」を明確にすると効果的です',
+      message: 'キーメッセージの成果や論点がまだ広めです',
+      suggestion: 'どの成果・課題・判断を扱う資料なのかが分かる語句を足すと、構成がぶれにくくなります',
     };
   }
+
   return null;
 }
 
@@ -173,17 +219,21 @@ export function assessAnswerQuality(
 
   // Target audience check
   const audienceVal = answers.targetAudience?.label || answers.targetAudience?.value || '';
+  const audienceResolutions = getFollowUpResolutions(followUpAnswers, 'targetAudience');
   const audienceFlag = assessTargetAudience(
     audienceVal,
-    getFollowUpResolution(followUpAnswers, 'targetAudience')
+    audienceResolutions,
+    combineFollowUpResolution(audienceResolutions, 'targetAudience')
   );
   if (audienceFlag) flags.push(audienceFlag);
 
   // Key message check
   const msgVal = answers.keyMessage?.label || answers.keyMessage?.value || '';
+  const messageResolutions = getFollowUpResolutions(followUpAnswers, 'keyMessage');
   const msgFlag = assessKeyMessage(
     msgVal,
-    getFollowUpResolution(followUpAnswers, 'keyMessage')
+    messageResolutions,
+    combineFollowUpResolution(messageResolutions, 'keyMessage')
   );
   if (msgFlag) flags.push(msgFlag);
 

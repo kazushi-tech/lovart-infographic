@@ -54,7 +54,7 @@ export default function WizardReviewView({
   const followUpHints = followUpAnswers
     .map(a => a.promptHint)
     .filter((h): h is string => !!h);
-  const briefSections = buildGenerationBrief(briefDraft, followUpHints);
+  const briefSections = buildGenerationBrief(briefDraft, followUpHints, followUpAnswers);
 
   return (
     <div className="flex flex-col h-full min-h-0">

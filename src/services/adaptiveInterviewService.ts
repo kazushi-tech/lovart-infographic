@@ -1,5 +1,5 @@
 import type { AdaptiveBriefContext, AdaptiveFieldId, AdaptiveOptionsResult, AdaptiveQuestionPacket, StepOption, InterviewFieldId, AnswerEntry } from '../interview/schema';
-import { classifyTheme, getFollowUpForField, type FollowUpStep } from '../interview/followUpTemplates';
+import { classifyTheme, getFollowUpForField, type ExistingFollowUpResolution, type FollowUpStep } from '../interview/followUpTemplates';
 import type { QualitySeverity } from '../interview/answerQuality';
 
 /**
@@ -310,7 +310,8 @@ function toQuestionPacket(followUp: FollowUpStep): AdaptiveQuestionPacket {
  */
 export function generateFollowUpQuestions(
   theme: string,
-  fieldFlags: Record<string, QualitySeverity | null>
+  fieldFlags: Record<string, QualitySeverity | null>,
+  existingFollowUpAnswers: ExistingFollowUpResolution[] = []
 ): AdaptiveQuestionPacket[] {
   const packets: AdaptiveQuestionPacket[] = [];
   const fieldsToCheck: InterviewFieldId[] = ['targetAudience', 'keyMessage'];
@@ -318,7 +319,7 @@ export function generateFollowUpQuestions(
   for (const fieldId of fieldsToCheck) {
     const severity = fieldFlags[fieldId] ?? null;
     if (severity) {
-      const followUp = getFollowUpForField(fieldId, theme, '', severity);
+      const followUp = getFollowUpForField(fieldId, theme, '', severity, existingFollowUpAnswers);
       if (followUp) {
         packets.push(toQuestionPacket(followUp));
       }
