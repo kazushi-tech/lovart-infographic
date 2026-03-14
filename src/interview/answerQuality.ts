@@ -18,6 +18,11 @@ export interface BriefQualityResult {
   score: number; // 0-100
 }
 
+export interface QualityFollowUpResolution {
+  parentFieldId: InterviewFieldId;
+  label: string;
+}
+
 // --- Field-level quality rules ---
 
 const VAGUE_THEME_PATTERNS = [
@@ -52,9 +57,12 @@ function assessTheme(value: string): QualityFlag | null {
   return null;
 }
 
-function assessTargetAudience(value: string): QualityFlag | null {
+function assessTargetAudience(value: string, hasResolution: boolean): QualityFlag | null {
   if (!value.trim()) {
     return { fieldId: 'targetAudience', severity: 'critical', message: 'ターゲットが未入力です' };
+  }
+  if (hasResolution) {
+    return null;
   }
   for (const pat of VAGUE_AUDIENCE_PATTERNS) {
     if (pat.test(value.trim())) {
@@ -69,9 +77,12 @@ function assessTargetAudience(value: string): QualityFlag | null {
   return null;
 }
 
-function assessKeyMessage(value: string): QualityFlag | null {
+function assessKeyMessage(value: string, hasResolution: boolean): QualityFlag | null {
   if (!value.trim()) {
     return { fieldId: 'keyMessage', severity: 'critical', message: 'キーメッセージが未入力です' };
+  }
+  if (hasResolution) {
+    return null;
   }
   for (const pat of WEAK_MESSAGE_PATTERNS) {
     if (pat.test(value.trim())) {
@@ -94,6 +105,15 @@ function assessKeyMessage(value: string): QualityFlag | null {
     };
   }
   return null;
+}
+
+function hasFollowUpResolution(
+  followUpAnswers: QualityFollowUpResolution[],
+  fieldId: InterviewFieldId
+): boolean {
+  return followUpAnswers.some(
+    answer => answer.parentFieldId === fieldId && answer.label.trim().length > 0
+  );
 }
 
 function assessSupplementary(value: string, theme: string): QualityFlag | null {
@@ -119,7 +139,8 @@ function assessSupplementary(value: string, theme: string): QualityFlag | null {
  * Assess quality of all answers and return flags.
  */
 export function assessAnswerQuality(
-  answers: Partial<Record<InterviewFieldId, AnswerEntry>>
+  answers: Partial<Record<InterviewFieldId, AnswerEntry>>,
+  followUpAnswers: QualityFollowUpResolution[] = []
 ): BriefQualityResult {
   const flags: QualityFlag[] = [];
 
@@ -130,12 +151,18 @@ export function assessAnswerQuality(
 
   // Target audience check
   const audienceVal = answers.targetAudience?.label || answers.targetAudience?.value || '';
-  const audienceFlag = assessTargetAudience(audienceVal);
+  const audienceFlag = assessTargetAudience(
+    audienceVal,
+    hasFollowUpResolution(followUpAnswers, 'targetAudience')
+  );
   if (audienceFlag) flags.push(audienceFlag);
 
   // Key message check
   const msgVal = answers.keyMessage?.label || answers.keyMessage?.value || '';
-  const msgFlag = assessKeyMessage(msgVal);
+  const msgFlag = assessKeyMessage(
+    msgVal,
+    hasFollowUpResolution(followUpAnswers, 'keyMessage')
+  );
   if (msgFlag) flags.push(msgFlag);
 
   // Supplementary check

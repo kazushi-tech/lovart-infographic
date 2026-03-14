@@ -17,6 +17,7 @@ interface AssistantShellProps {
   onFollowUpSkip: () => void;
   onBack: () => void;
   onGoToStep: (index: number) => void;
+  onResolveIssue?: (fieldId: InterviewFieldId) => void;
   onStartInterview: () => void;
   onSample: () => void;
   onGenerate: () => void;
@@ -35,6 +36,7 @@ export default function AssistantShell({
   onFollowUpSkip,
   onBack,
   onGoToStep,
+  onResolveIssue,
   onStartInterview,
   onSample,
   onGenerate,
@@ -47,7 +49,10 @@ export default function AssistantShell({
 }: AssistantShellProps) {
   const { activeStepIndex, answers, phase, currentFollowUp } = wizardState;
   const briefDraft = buildBriefDraft(answers);
-  const quality = useMemo(() => buildBriefQuality(answers), [answers]);
+  const quality = useMemo(
+    () => buildBriefQuality(answers, wizardState.followUpAnswers),
+    [answers, wizardState.followUpAnswers]
+  );
 
   const isWelcome = phase === 'idle';
   const isReview = phase === 'review';
@@ -92,6 +97,7 @@ export default function AssistantShell({
           onGenerate={onGenerate}
           onBack={onBack}
           onGoToField={handleGoToField}
+          onResolveIssue={onResolveIssue}
           isGenerateDisabled={isGenerateDisabled}
           isGenerateLoading={isGenerateLoading}
         />

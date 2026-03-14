@@ -14,7 +14,7 @@ import { getDesignToken } from '../designTokens';
 import { enqueue, onProgress as onBgQueueProgress } from '../services/backgroundQueue';
 import { useApiKeys } from '../hooks/useApiKeys';
 import { useDeckHistory } from '../hooks/useDeckHistory';
-import { AppScreen, AnswerEntry, InterviewFieldId } from '../interview/schema';
+import { AppScreen, AnswerEntry, InterviewFieldId, INTERVIEW_STEPS } from '../interview/schema';
 import type { FollowUpAnswerEntry } from '../interview/state';
 import { assessAnswerQuality } from '../interview/answerQuality';
 import { generateFollowUpQuestions } from '../services/adaptiveInterviewService';
@@ -130,6 +130,45 @@ export default function AppShell() {
     }
   }, [slides, messages, screen, currentDeckId, debouncedSave]);
 
+  const openFollowUpForField = useCallback((
+    fieldId: InterviewFieldId,
+    nextAnswers: Partial<Record<InterviewFieldId, AnswerEntry>> = wizardState.answers,
+    nextFollowUpAnswers: FollowUpAnswerEntry[] = wizardState.followUpAnswers,
+    options?: {
+      parentStepIndex?: number;
+      resumeStepIndex?: number;
+      returnPhase?: 'collecting' | 'review';
+    }
+  ) => {
+    const quality = assessAnswerQuality(nextAnswers, nextFollowUpAnswers);
+    const severity = quality.flags.find(flag => flag.fieldId === fieldId)?.severity ?? null;
+    if (!severity) {
+      return false;
+    }
+
+    const theme = nextAnswers.theme?.value || nextAnswers.theme?.label || '';
+    const packets = generateFollowUpQuestions(theme, { [fieldId]: severity });
+    const packet = packets.find(item => item.parentFieldId === fieldId);
+    if (!packet) {
+      return false;
+    }
+
+    const fieldStepIndex = INTERVIEW_STEPS.findIndex(step => step.fieldId === fieldId);
+    const parentStepIndex = options?.parentStepIndex ?? fieldStepIndex;
+    const resumeStepIndex = options?.resumeStepIndex ?? fieldStepIndex;
+    const returnPhase = options?.returnPhase ?? 'collecting';
+
+    dispatch({
+      type: 'showFollowUp',
+      packet,
+      parentStepIndex: Math.max(0, parentStepIndex),
+      resumeStepIndex: Math.max(0, resumeStepIndex),
+      returnPhase,
+    });
+    setScreen('wizard');
+    return true;
+  }, [wizardState.answers, wizardState.followUpAnswers]);
+
   // --- Wizard handlers ---
   const handleAnswerCommit = (entry: AnswerEntry) => {
     dispatch({ type: 'answer', fieldId: entry.fieldId, entry });
@@ -138,19 +177,14 @@ export default function AppShell() {
     const followUpFields: InterviewFieldId[] = ['targetAudience', 'keyMessage'];
     if (followUpFields.includes(entry.fieldId)) {
       const updatedAnswers = { ...wizardState.answers, [entry.fieldId]: entry };
-      const quality = assessAnswerQuality(updatedAnswers);
-      const fieldFlags: Record<string, import('../interview/answerQuality').QualitySeverity | null> = {};
-      for (const flag of quality.flags) {
-        if (flag.fieldId === entry.fieldId) {
-          fieldFlags[flag.fieldId] = flag.severity;
-        }
-      }
-      const theme = updatedAnswers.theme?.value || updatedAnswers.theme?.label || '';
-      const packets = generateFollowUpQuestions(theme, fieldFlags);
-      if (packets.length > 0) {
-        // Show the first relevant follow-up
-        dispatch({ type: 'showFollowUp', packet: packets[0] });
-      }
+      const updatedFollowUpAnswers = wizardState.followUpAnswers.filter(
+        answer => answer.parentFieldId !== entry.fieldId
+      );
+      openFollowUpForField(entry.fieldId, updatedAnswers, updatedFollowUpAnswers, {
+        parentStepIndex: wizardState.activeStepIndex,
+        resumeStepIndex: Math.min(wizardState.activeStepIndex + 1, INTERVIEW_STEPS.length - 1),
+        returnPhase: 'collecting',
+      });
     }
   };
 
@@ -169,10 +203,25 @@ export default function AppShell() {
     dispatch({ type: 'back' });
   };
 
-  const handleWizardGoToStep = (index: number) => {
+  const handleWizardGoToStep = useCallback((index: number) => {
     dispatch({ type: 'goToStep', index });
     setScreen('wizard');
-  };
+  }, []);
+
+  const handleResolveIssue = useCallback((fieldId: InterviewFieldId) => {
+    const fieldStepIndex = INTERVIEW_STEPS.findIndex(step => step.fieldId === fieldId);
+    const opened = openFollowUpForField(fieldId, wizardState.answers, wizardState.followUpAnswers, {
+      parentStepIndex: fieldStepIndex,
+      resumeStepIndex: fieldStepIndex,
+      returnPhase: 'review',
+    });
+    if (!opened) {
+      const stepIndex = fieldStepIndex;
+      if (stepIndex >= 0) {
+        handleWizardGoToStep(stepIndex);
+      }
+    }
+  }, [handleWizardGoToStep, openFollowUpForField, wizardState.answers, wizardState.followUpAnswers]);
 
   const handleStartInterview = () => {
     dispatch({ type: 'startInterview' });
@@ -456,6 +505,7 @@ export default function AppShell() {
               onFollowUpSkip={handleFollowUpSkip}
               onBack={handleWizardBack}
               onGoToStep={handleWizardGoToStep}
+              onResolveIssue={handleResolveIssue}
               onStartInterview={handleStartInterview}
               onSample={handleSample}
               onGenerate={handleGenerate}

@@ -25,6 +25,12 @@ export interface InterviewWizardState {
   answers: Partial<Record<InterviewFieldId, AnswerEntry>>;
   /** Currently active follow-up question (shown instead of next base step) */
   currentFollowUp: AdaptiveQuestionPacket | null;
+  /** Base step index that triggered the current follow-up */
+  followUpParentStepIndex: number | null;
+  /** Step index to resume after the current follow-up is completed */
+  followUpResumeStepIndex: number | null;
+  /** Phase to return to after the current follow-up is completed */
+  followUpReturnPhase: 'collecting' | 'review' | null;
   /** Completed follow-up answers */
   followUpAnswers: FollowUpAnswerEntry[];
   phase: 'idle' | 'collecting' | 'follow-up' | 'review';
@@ -37,7 +43,13 @@ export type WizardAction =
   | { type: 'loadSample' }
   | { type: 'startInterview' }
   | { type: 'reset' }
-  | { type: 'showFollowUp'; packet: AdaptiveQuestionPacket }
+  | {
+      type: 'showFollowUp';
+      packet: AdaptiveQuestionPacket;
+      parentStepIndex: number;
+      resumeStepIndex: number;
+      returnPhase: 'collecting' | 'review';
+    }
   | { type: 'answerFollowUp'; answer: FollowUpAnswerEntry }
   | { type: 'skipFollowUp' };
 
@@ -46,6 +58,9 @@ export function createInitialWizardState(): InterviewWizardState {
     activeStepIndex: 0,
     answers: {},
     currentFollowUp: null,
+    followUpParentStepIndex: null,
+    followUpResumeStepIndex: null,
+    followUpReturnPhase: null,
     followUpAnswers: [],
     phase: 'idle',
   };
@@ -58,12 +73,19 @@ export function interviewWizardReducer(
   switch (action.type) {
     case 'answer': {
       const newAnswers = { ...state.answers, [action.fieldId]: action.entry };
+      const remainingFollowUps = state.followUpAnswers.filter(
+        answer => answer.parentFieldId !== action.fieldId
+      );
       const nextIndex = state.activeStepIndex + 1;
       const isLastStep = nextIndex >= INTERVIEW_STEPS.length;
       return {
         ...state,
         answers: newAnswers,
         currentFollowUp: null,
+        followUpParentStepIndex: null,
+        followUpResumeStepIndex: null,
+        followUpReturnPhase: null,
+        followUpAnswers: remainingFollowUps,
         activeStepIndex: isLastStep ? state.activeStepIndex : nextIndex,
         phase: isLastStep ? 'review' : 'collecting',
       };
@@ -71,9 +93,23 @@ export function interviewWizardReducer(
     case 'back': {
       // If in follow-up, go back to the base step
       if (state.phase === 'follow-up' && state.currentFollowUp) {
+        if (state.followUpReturnPhase === 'review') {
+          return {
+            ...state,
+            currentFollowUp: null,
+            followUpParentStepIndex: null,
+            followUpResumeStepIndex: null,
+            followUpReturnPhase: null,
+            phase: 'review',
+          };
+        }
         return {
           ...state,
           currentFollowUp: null,
+          activeStepIndex: state.followUpParentStepIndex ?? state.activeStepIndex,
+          followUpParentStepIndex: null,
+          followUpResumeStepIndex: null,
+          followUpReturnPhase: null,
           phase: 'collecting',
         };
       }
@@ -97,6 +133,9 @@ export function interviewWizardReducer(
         ...state,
         activeStepIndex: idx,
         currentFollowUp: null,
+        followUpParentStepIndex: null,
+        followUpResumeStepIndex: null,
+        followUpReturnPhase: null,
         phase: 'collecting',
       };
     }
@@ -105,6 +144,9 @@ export function interviewWizardReducer(
         activeStepIndex: INTERVIEW_STEPS.length - 1,
         answers: { ...SAMPLE_ANSWERS },
         currentFollowUp: null,
+        followUpParentStepIndex: null,
+        followUpResumeStepIndex: null,
+        followUpReturnPhase: null,
         followUpAnswers: [],
         phase: 'review',
       };
@@ -123,34 +165,39 @@ export function interviewWizardReducer(
       return {
         ...state,
         currentFollowUp: action.packet,
+        followUpParentStepIndex: action.parentStepIndex,
+        followUpResumeStepIndex: action.resumeStepIndex,
+        followUpReturnPhase: action.returnPhase,
         phase: 'follow-up',
       };
     }
     case 'answerFollowUp': {
       const newFollowUpAnswers = [
-        ...state.followUpAnswers.filter(a => a.followUpId !== action.answer.followUpId),
+        ...state.followUpAnswers.filter(
+          a => a.followUpId !== action.answer.followUpId && a.parentFieldId !== action.answer.parentFieldId
+        ),
         action.answer,
       ];
-      // After answering follow-up, advance to next base step
-      const nextIndex = state.activeStepIndex + 1;
-      const isLastStep = nextIndex >= INTERVIEW_STEPS.length;
       return {
         ...state,
         currentFollowUp: null,
+        followUpParentStepIndex: null,
+        followUpResumeStepIndex: null,
+        followUpReturnPhase: null,
         followUpAnswers: newFollowUpAnswers,
-        activeStepIndex: isLastStep ? state.activeStepIndex : nextIndex,
-        phase: isLastStep ? 'review' : 'collecting',
+        activeStepIndex: state.followUpResumeStepIndex ?? state.activeStepIndex,
+        phase: state.followUpReturnPhase ?? 'collecting',
       };
     }
     case 'skipFollowUp': {
-      // Skip the follow-up and advance normally
-      const nextIndex = state.activeStepIndex + 1;
-      const isLastStep = nextIndex >= INTERVIEW_STEPS.length;
       return {
         ...state,
         currentFollowUp: null,
-        activeStepIndex: isLastStep ? state.activeStepIndex : nextIndex,
-        phase: isLastStep ? 'review' : 'collecting',
+        followUpParentStepIndex: null,
+        followUpResumeStepIndex: null,
+        followUpReturnPhase: null,
+        activeStepIndex: state.followUpResumeStepIndex ?? state.activeStepIndex,
+        phase: state.followUpReturnPhase ?? 'collecting',
       };
     }
     default:
@@ -176,6 +223,9 @@ export function buildBriefDraft(answers: Partial<Record<InterviewFieldId, Answer
  * Assess the quality of all collected answers.
  * Returns flags for critical/warning issues that need attention.
  */
-export function buildBriefQuality(answers: Partial<Record<InterviewFieldId, AnswerEntry>>): BriefQualityResult {
-  return assessAnswerQuality(answers);
+export function buildBriefQuality(
+  answers: Partial<Record<InterviewFieldId, AnswerEntry>>,
+  followUpAnswers: FollowUpAnswerEntry[] = []
+): BriefQualityResult {
+  return assessAnswerQuality(answers, followUpAnswers);
 }

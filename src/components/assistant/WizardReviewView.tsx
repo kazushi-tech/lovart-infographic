@@ -29,6 +29,7 @@ interface WizardReviewViewProps {
   onGenerate: () => void;
   onBack: () => void;
   onGoToField?: (fieldId: InterviewFieldId) => void;
+  onResolveIssue?: (fieldId: InterviewFieldId) => void;
   isGenerateDisabled: boolean;
   isGenerateLoading: boolean;
 }
@@ -40,6 +41,7 @@ export default function WizardReviewView({
   onGenerate,
   onBack,
   onGoToField,
+  onResolveIssue,
   isGenerateDisabled,
   isGenerateLoading,
 }: WizardReviewViewProps) {
@@ -61,9 +63,9 @@ export default function WizardReviewView({
         <div className="mb-5 p-4 bg-slate-800/40 rounded-xl border border-slate-700/50">
           <p className="text-sm text-slate-300 leading-relaxed">
             {hasCritical
-              ? '入力内容に重大な不足があります。該当項目を修正してから生成してください。'
+              ? '入力内容に重大な不足があります。該当項目をクリックし、選択肢で補足してから生成してください。'
               : quality?.hasWarning
-              ? 'ヒアリングが完了しました。一部改善の余地がありますが、このまま生成も可能です。'
+              ? 'ヒアリングが完了しました。一部改善の余地があります。必要なら項目をクリックして選択肢で補足できます。'
               : 'ヒアリングが完了しました。以下がAIの理解です。認識にズレがあれば項目をクリックして修正してください。'}
           </p>
         </div>
@@ -76,7 +78,13 @@ export default function WizardReviewView({
                 {group.flags.map((flag, i) => (
                   <button
                     key={i}
-                    onClick={() => onGoToField?.(flag.fieldId)}
+                    onClick={() => {
+                      if (onResolveIssue) {
+                        onResolveIssue(flag.fieldId);
+                        return;
+                      }
+                      onGoToField?.(flag.fieldId);
+                    }}
                     className={`w-full text-left p-3 rounded-lg border flex items-start gap-3 transition-colors ${
                       flag.severity === 'critical'
                         ? 'bg-red-950/40 border-red-800/50 hover:bg-red-950/60'
@@ -95,6 +103,7 @@ export default function WizardReviewView({
                       {flag.suggestion && (
                         <p className="text-xs text-slate-400 mt-1">{flag.suggestion}</p>
                       )}
+                      <p className="text-[11px] text-slate-500 mt-2">クリックすると候補を開いて補足できます</p>
                     </div>
                   </button>
                 ))}
@@ -168,7 +177,7 @@ export default function WizardReviewView({
           {isGenerateLoading
             ? '生成中...'
             : hasCritical
-            ? '重大な不足があります'
+            ? '選択肢で補足してください'
             : 'この理解で生成する'}
         </button>
       </div>
