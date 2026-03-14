@@ -9,6 +9,7 @@ interface WizardStepDialogProps {
   onCommit: (entry: AnswerEntry) => void;
   onBack?: () => void;
   isFirst: boolean;
+  theme?: string;
   // M3: Adaptive options support
   adaptiveOptions?: Record<AdaptiveFieldId, StepOption[]>;
   isAdaptiveLoading?: (fieldId: AdaptiveFieldId) => boolean;
@@ -20,9 +21,29 @@ export default function WizardStepDialog({
   onCommit,
   onBack,
   isFirst,
+  theme = '',
   adaptiveOptions = { targetAudience: [], keyMessage: [], tone: [], supplementary: [] },
   isAdaptiveLoading = () => false,
 }: WizardStepDialogProps) {
+  const normalizedTheme = theme.trim();
+  const displayedQuestion = useMemo(() => {
+    if (!normalizedTheme) {
+      return step.question;
+    }
+    switch (step.fieldId) {
+      case 'targetAudience':
+        return `「${normalizedTheme}」を、まず誰に伝える資料にしたいですか？`;
+      case 'keyMessage':
+        return `「${normalizedTheme}」について、相手にどんな結論を持って帰ってほしいですか？`;
+      case 'tone':
+        return `「${normalizedTheme}」を、どんな雰囲気で見せたいですか？`;
+      case 'supplementary':
+        return `「${normalizedTheme}」で、追加しておきたい材料はありますか？`;
+      default:
+        return step.question;
+    }
+  }, [normalizedTheme, step.fieldId, step.question]);
+
   // M3: Merge adaptive options with default options
   const mergedOptions = useMemo(() => {
     const relevantAdaptive = adaptiveOptions[step.fieldId as AdaptiveFieldId] || [];
@@ -162,7 +183,7 @@ export default function WizardStepDialog({
             </button>
           )}
           <h2 className="text-lg font-semibold text-slate-100 leading-relaxed">
-            {step.question}
+            {displayedQuestion}
           </h2>
         </div>
       </div>

@@ -6,6 +6,7 @@ const app = express();
 app.use(express.json());
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
+const RESEARCH_MODEL = 'gemini-3-flash-preview';
 
 function getServerKeys() {
   const geminiKey = (process.env.GEMINI_API_KEY || '').trim();
@@ -84,7 +85,7 @@ app.post("/api/research", async (req, res) => {
 `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.1-flash',
+      model: RESEARCH_MODEL,
       contents: prompt,
       config: {
         responseMimeType: 'application/json',

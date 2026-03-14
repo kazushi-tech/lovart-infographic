@@ -27,6 +27,7 @@ interface AssistantShellProps {
   // M3: Adaptive options support
   adaptiveOptions?: Record<AdaptiveFieldId, StepOption[]>;
   isAdaptiveLoading?: (fieldId: AdaptiveFieldId) => boolean;
+  theme?: string;
 }
 
 export default function AssistantShell({
@@ -46,6 +47,7 @@ export default function AssistantShell({
 
   adaptiveOptions = { targetAudience: [], keyMessage: [], tone: [], supplementary: [] },
   isAdaptiveLoading = () => false,
+  theme = '',
 }: AssistantShellProps) {
   const { activeStepIndex, answers, phase, currentFollowUp } = wizardState;
   const briefDraft = buildBriefDraft(answers);
@@ -111,6 +113,7 @@ export default function AssistantShell({
       ) : currentStep ? (
         <WizardStepDialog
           step={currentStep}
+          theme={theme}
           adaptiveOptions={adaptiveOptions}
           isAdaptiveLoading={isAdaptiveLoading}
           existingAnswer={answers[currentStep.fieldId]}

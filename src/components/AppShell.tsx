@@ -164,12 +164,13 @@ export default function AppShell() {
   ) => {
     const quality = assessAnswerQuality(nextAnswers, nextFollowUpAnswers);
     const severity = quality.flags.find(flag => flag.fieldId === fieldId)?.severity ?? null;
-    if (!severity) {
+    const effectiveSeverity = fieldId === 'theme' ? (severity ?? 'warning') : severity;
+    if (!effectiveSeverity) {
       return false;
     }
 
     const theme = nextAnswers.theme?.value || nextAnswers.theme?.label || '';
-    const packets = generateFollowUpQuestions(theme, { [fieldId]: severity }, nextFollowUpAnswers);
+    const packets = generateFollowUpQuestions(theme, { [fieldId]: effectiveSeverity }, nextFollowUpAnswers);
     const packet = packets.find(item =>
       item.parentFieldId === fieldId && item.id !== options?.currentFollowUpId
     );
@@ -479,7 +480,8 @@ export default function AppShell() {
         status: 'failed',
       };
       await saveDeck(failedRecord);
-      alert('設定した API キーを確認してください。');
+      const message = error instanceof Error ? error.message : '不明なエラーが発生しました';
+      alert(`生成に失敗しました: ${message}`);
       setScreen('review');
     } finally {
       setIsGenerating(false);
@@ -571,6 +573,7 @@ export default function AppShell() {
           <div className="flex-1 flex flex-col items-center justify-center bg-slate-950 p-6 min-h-0">
             <AssistantShell
               wizardState={wizardState}
+              theme={briefDraft.theme}
               onAnswerCommit={handleAnswerCommit}
               onFollowUpCommit={handleFollowUpCommit}
               onFollowUpSkip={handleFollowUpSkip}

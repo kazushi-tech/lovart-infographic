@@ -82,6 +82,10 @@ const slideStructureSchema = {
   }
 };
 
+const RESEARCH_MODEL = 'gemini-3-flash-preview';
+const STRUCTURE_MODEL = 'gemini-3-pro-preview';
+const BACKGROUND_IMAGE_MODEL = 'gemini-3-pro-image-preview';
+
 /**
  * Build an evidence context block for the generation prompt.
  * When a ResearchPacket is available, the AI is constrained to use only these claims.
@@ -203,7 +207,7 @@ ${antiPatterns}
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3.1-pro-preview",
+      model: STRUCTURE_MODEL,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -257,7 +261,7 @@ export async function generateBackgroundImage(prompt: string, apiKey: string): P
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3.1-flash-image-preview',
+      model: BACKGROUND_IMAGE_MODEL,
       contents: {
         parts: [{ text: prompt + ", abstract, professional business presentation background, no text, high quality, 16:9 aspect ratio" }]
       },
